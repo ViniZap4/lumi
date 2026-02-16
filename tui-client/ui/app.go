@@ -19,6 +19,7 @@ type focusPanel int
 const (
 	focusFolders focusPanel = iota
 	focusNotes
+	focusPreview
 )
 
 type inputMode int
@@ -27,22 +28,26 @@ const (
 	modeNormal inputMode = iota
 	modeNewNote
 	modeDelete
+	modeLinks
 )
 
 type Model struct {
-	rootDir      string
-	currentDir   string
-	folders      []folderItem
-	notes        []noteItem
-	folderCursor int
-	noteCursor   int
-	focus        focusPanel
-	mode         inputMode
-	previewMode  PreviewMode
-	input        string
-	width        int
-	height       int
-	err          error
+	rootDir       string
+	currentDir    string
+	folders       []folderItem
+	notes         []noteItem
+	folderCursor  int
+	noteCursor    int
+	previewScroll int
+	linkCursor    int
+	focus         focusPanel
+	mode          inputMode
+	previewMode   PreviewMode
+	input         string
+	width         int
+	height        int
+	err           error
+	links         []string
 }
 
 func NewModel(rootDir string) Model {
@@ -147,28 +152,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.mode == modeLinks {
+			switch msg.String() {
+			case "j":
+				if m.linkCursor < len(m.links)-1 {
+					m.linkCursor++
+				}
+				return m, nil
+			case "k":
+				if m.linkCursor > 0 {
+					m.linkCursor--
+				}
+				return m, nil
+			case "enter":
+				return m.followLink()
+			case "esc", "q":
+				m.mode = modeNormal
+				return m, nil
+			}
+			return m, nil
+		}
+
 		// Normal mode
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-		case "tab":
-			if m.focus == focusFolders {
-				m.focus = focusNotes
-			} else {
-				m.focus = focusFolders
-			}
-			return m, nil
 		case "h":
-			if m.focus == focusFolders {
+			// Vim motion: move left (folders or up directory)
+			if m.focus == focusNotes {
+				m.focus = focusFolders
+			} else if m.focus == focusPreview {
+				m.focus = focusNotes
+			} else if m.focus == focusFolders {
 				return m.goUpFolder()
 			}
-			m.focus = focusFolders
 			return m, nil
 		case "l":
+			// Vim motion: move right (notes or preview or enter folder)
 			if m.focus == focusFolders {
-				return m.enterFolder()
+				if len(m.folders) > 0 {
+					return m.enterFolder()
+				}
+				m.focus = focusNotes
+			} else if m.focus == focusNotes {
+				if m.previewMode != PreviewOff {
+					m.focus = focusPreview
+					m.updateLinks()
+				}
 			}
-			m.focus = focusNotes
 			return m, nil
 		case "j":
 			return m.handleDown()
@@ -187,11 +218,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previewMode = PreviewFull
 			case PreviewFull:
 				m.previewMode = PreviewOff
+				if m.focus == focusPreview {
+					m.focus = focusNotes
+				}
 			}
+			m.previewScroll = 0
 			return m, nil
 		case "enter":
 			if m.focus == focusFolders {
 				return m.enterFolder()
+			} else if m.focus == focusPreview {
+				return m.followLinkAtCursor()
 			}
 			return m.editNote()
 		case "e":
@@ -203,6 +240,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			if m.focus == focusNotes && len(m.notes) > 0 {
 				m.mode = modeDelete
+			}
+			return m, nil
+		case "L":
+			// Show links modal
+			m.updateLinks()
+			if len(m.links) > 0 {
+				m.mode = modeLinks
+				m.linkCursor = 0
 			}
 			return m, nil
 		}
@@ -224,6 +269,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, n := range msg.notes {
 			m.notes[i] = noteItem{n}
 		}
+		m.previewScroll = 0
 		return m, nil
 
 	case editorFinishedMsg:
@@ -242,10 +288,12 @@ func (m Model) handleDown() (tea.Model, tea.Cmd) {
 		if m.folderCursor < len(m.folders)-1 {
 			m.folderCursor++
 		}
-	} else {
+	} else if m.focus == focusNotes {
 		if m.noteCursor < len(m.notes)-1 {
 			m.noteCursor++
 		}
+	} else if m.focus == focusPreview {
+		m.previewScroll++
 	}
 	return m, nil
 }
@@ -255,9 +303,13 @@ func (m Model) handleUp() (tea.Model, tea.Cmd) {
 		if m.folderCursor > 0 {
 			m.folderCursor--
 		}
-	} else {
+	} else if m.focus == focusNotes {
 		if m.noteCursor > 0 {
 			m.noteCursor--
+		}
+	} else if m.focus == focusPreview {
+		if m.previewScroll > 0 {
+			m.previewScroll--
 		}
 	}
 	return m, nil
@@ -266,17 +318,25 @@ func (m Model) handleUp() (tea.Model, tea.Cmd) {
 func (m Model) handleTop() (tea.Model, tea.Cmd) {
 	if m.focus == focusFolders {
 		m.folderCursor = 0
-	} else {
+	} else if m.focus == focusNotes {
 		m.noteCursor = 0
+	} else if m.focus == focusPreview {
+		m.previewScroll = 0
 	}
 	return m, nil
 }
 
 func (m Model) handleBottom() (tea.Model, tea.Cmd) {
 	if m.focus == focusFolders {
-		m.folderCursor = len(m.folders) - 1
-	} else {
-		m.noteCursor = len(m.notes) - 1
+		if len(m.folders) > 0 {
+			m.folderCursor = len(m.folders) - 1
+		}
+	} else if m.focus == focusNotes {
+		if len(m.notes) > 0 {
+			m.noteCursor = len(m.notes) - 1
+		}
+	} else if m.focus == focusPreview {
+		m.previewScroll = 9999 // Will be clamped in render
 	}
 	return m, nil
 }
@@ -298,6 +358,7 @@ func (m Model) enterFolder() (tea.Model, tea.Cmd) {
 	m.currentDir = folder.Path
 	m.folderCursor = 0
 	m.noteCursor = 0
+	m.previewScroll = 0
 
 	return m, tea.Batch(m.loadFolders, m.loadNotes)
 }
@@ -310,6 +371,7 @@ func (m Model) goUpFolder() (tea.Model, tea.Cmd) {
 	m.currentDir = filepath.Dir(m.currentDir)
 	m.folderCursor = 0
 	m.noteCursor = 0
+	m.previewScroll = 0
 	return m, tea.Batch(m.loadFolders, m.loadNotes)
 }
 
@@ -373,6 +435,48 @@ func (m Model) deleteNote() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(m.loadNotes, m.loadFolders)
 }
 
+func (m *Model) updateLinks() {
+	if len(m.notes) == 0 || m.noteCursor >= len(m.notes) {
+		m.links = []string{}
+		return
+	}
+	note := m.notes[m.noteCursor].note
+	m.links = extractLinks(note.Content)
+}
+
+func (m Model) followLink() (tea.Model, tea.Cmd) {
+	if m.linkCursor >= len(m.links) {
+		m.mode = modeNormal
+		return m, nil
+	}
+
+	link := m.links[m.linkCursor]
+	m.mode = modeNormal
+
+	// Try to find note by ID
+	for i, item := range m.notes {
+		if item.note.ID == link || strings.Contains(item.note.Path, link) {
+			m.noteCursor = i
+			m.previewScroll = 0
+			return m, nil
+		}
+	}
+
+	return m, nil
+}
+
+func (m Model) followLinkAtCursor() (tea.Model, tea.Cmd) {
+	m.updateLinks()
+	if len(m.links) == 0 {
+		return m.editNote()
+	}
+
+	// For now, just open links modal
+	m.mode = modeLinks
+	m.linkCursor = 0
+	return m, nil
+}
+
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Loading..."
@@ -415,8 +519,12 @@ func (m Model) View() string {
 		if len(m.notes) > 0 && m.noteCursor < len(m.notes) {
 			selectedNote = m.notes[m.noteCursor].note
 		}
-		previewView := renderPreview(selectedNote, m.previewMode, previewWidth, panelHeight)
-		previewView = InactivePanelStyle.Width(previewWidth).Height(panelHeight).Render(previewView)
+		previewView := m.renderPreview(selectedNote, previewWidth, panelHeight)
+		if m.focus == focusPreview {
+			previewView = ActivePanelStyle.Width(previewWidth).Height(panelHeight).Render(previewView)
+		} else {
+			previewView = InactivePanelStyle.Width(previewWidth).Height(panelHeight).Render(previewView)
+		}
 		panels = lipgloss.JoinHorizontal(lipgloss.Top, foldersView, notesView, previewView)
 	} else {
 		panels = lipgloss.JoinHorizontal(lipgloss.Top, foldersView, notesView)
@@ -447,21 +555,30 @@ func (m Model) View() string {
 		help = fmt.Sprintf("New note title: %s█ (enter=create, esc=cancel)", m.input)
 	case modeDelete:
 		help = "Delete note? (y/n)"
+	case modeLinks:
+		help = "Links: " + HelpKeyStyle.Render("j/k") + "=navigate | " + HelpKeyStyle.Render("enter") + "=follow | " + HelpKeyStyle.Render("esc") + "=close"
 	default:
 		helpKeys := []string{
 			HelpKeyStyle.Render("q") + "=quit",
-			HelpKeyStyle.Render("tab") + "=switch",
-			HelpKeyStyle.Render("h/l") + "=folders",
+			HelpKeyStyle.Render("h/l") + "=navigate",
 			HelpKeyStyle.Render("j/k") + "=move",
 			HelpKeyStyle.Render("e") + "=edit",
 			HelpKeyStyle.Render("n") + "=new",
 			HelpKeyStyle.Render("d") + "=delete",
 			HelpKeyStyle.Render("v") + "=preview",
+			HelpKeyStyle.Render("L") + "=links",
 		}
 		help = HelpStyle.Render(strings.Join(helpKeys, " | "))
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, statusBar, panels, help)
+	// Show links modal if active
+	view := lipgloss.JoinVertical(lipgloss.Left, statusBar, panels, help)
+	if m.mode == modeLinks {
+		modal := m.renderLinksModal()
+		view = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal, lipgloss.WithWhitespaceChars(" "))
+	}
+
+	return view
 }
 
 func (m Model) renderFolders(width, height int) string {
@@ -541,4 +658,89 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (m Model) renderPreview(note *domain.Note, width, height int) string {
+	if note == nil {
+		return DimItemStyle.Render("No note selected")
+	}
+
+	var content strings.Builder
+
+	// Title
+	content.WriteString(PreviewTitleStyle.Render(note.Title))
+	content.WriteString("\n\n")
+
+	// Metadata
+	meta := PreviewMetaStyle.Render(
+		"ID: " + note.ID + " | " +
+			"Created: " + note.CreatedAt.Format("2006-01-02") + " | " +
+			"Tags: " + strings.Join(note.Tags, ", "),
+	)
+	content.WriteString(meta)
+	content.WriteString("\n\n")
+
+	// Content with scroll
+	noteContent := note.Content
+	lines := strings.Split(noteContent, "\n")
+
+	// Apply scroll
+	if m.previewScroll > len(lines) {
+		m.previewScroll = max(0, len(lines)-1)
+	}
+
+	visibleLines := height - 8
+	start := m.previewScroll
+	end := min(len(lines), start+visibleLines)
+
+	if start < len(lines) {
+		visibleContent := strings.Join(lines[start:end], "\n")
+		visibleContent = highlightLinks(visibleContent)
+		content.WriteString(PreviewContentStyle.Width(width - 4).Render(visibleContent))
+
+		if end < len(lines) {
+			content.WriteString("\n" + DimItemStyle.Render("... (more below)"))
+		}
+	}
+
+	// Show scroll indicator
+	if m.focus == focusPreview {
+		scrollInfo := fmt.Sprintf("\n\n%s Line %d/%d", DimItemStyle.Render("↕"), m.previewScroll+1, len(lines))
+		content.WriteString(scrollInfo)
+	}
+
+	return content.String()
+}
+
+func (m Model) renderLinksModal() string {
+	modalWidth := min(60, m.width-4)
+	modalHeight := min(20, m.height-4)
+
+	var content strings.Builder
+	content.WriteString(TitleStyle.Render("🔗 Links in Note"))
+	content.WriteString("\n\n")
+
+	if len(m.links) == 0 {
+		content.WriteString(DimItemStyle.Render("No links found"))
+	} else {
+		for i, link := range m.links {
+			if i == m.linkCursor {
+				content.WriteString(SelectedItemStyle.Render("▸ " + link))
+			} else {
+				content.WriteString(NormalItemStyle.Render("  " + link))
+			}
+			content.WriteString("\n")
+		}
+	}
+
+	modal := lipgloss.NewStyle().
+		Width(modalWidth).
+		Height(modalHeight).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(primaryColor).
+		Padding(1, 2).
+		Background(bgColor).
+		Render(content.String())
+
+	return modal
 }
