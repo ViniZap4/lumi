@@ -2,6 +2,8 @@
 
 A local-first, Markdown-based note-taking ecosystem with terminal and web clients.
 
+> ⚠️ **This project is still in active development.** Features and APIs may change.
+
 ## Quick Start
 
 ### Docker Compose (Recommended)
