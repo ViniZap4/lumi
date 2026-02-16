@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/atotto/clipboard"
 	"github.com/vinizap/lumi/tui-client/domain"
 	"github.com/vinizap/lumi/tui-client/editor"
 	"github.com/vinizap/lumi/tui-client/filesystem"
@@ -40,6 +41,12 @@ type SimpleModel struct {
 	showTree     bool // tree modal overlay
 	splitMode    string // "", "horizontal", "vertical"
 	splitNote    *domain.Note
+	
+	// Search modal
+	showSearch   bool
+	searchQuery  string
+	searchType   string // "content" or "filename"
+	searchResults []Item
 }
 
 type ViewMode int
@@ -103,6 +110,48 @@ func (m SimpleModel) searchRecursive(query string) []Item {
 	})
 	
 	return results
+}
+
+// Search in content or filename
+func (m SimpleModel) performSearch() tea.Msg {
+	if m.searchQuery == "" {
+		return itemsLoadedMsg{m.searchResults}
+	}
+	
+	var results []Item
+	query := strings.ToLower(m.searchQuery)
+	
+	filepath.Walk(m.rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+		
+		note, err := filesystem.ReadNote(path)
+		if err != nil {
+			return nil
+		}
+		
+		match := false
+		if m.searchType == "filename" {
+			match = strings.Contains(strings.ToLower(info.Name()), query)
+		} else {
+			match = strings.Contains(strings.ToLower(note.Content), query)
+		}
+		
+		if match {
+			relPath, _ := filepath.Rel(m.rootDir, path)
+			results = append(results, Item{
+				Name:     relPath,
+				IsFolder: false,
+				Path:     path,
+				Note:     note,
+			})
+		}
+		return nil
+	})
+	
+	m.searchResults = results
+	return itemsLoadedMsg{results}
 }
 
 func (m SimpleModel) loadItems() tea.Msg {
@@ -171,6 +220,56 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Full view mode with cursor
 		if m.viewMode == ViewFullNote {
+			// Search modal is open
+			if m.showSearch {
+				switch msg.String() {
+				case "esc":
+					m.showSearch = false
+					m.searchQuery = ""
+					return m, nil
+				case "ctrl+f":
+					// Toggle search type
+					if m.searchType == "filename" {
+						m.searchType = "content"
+					} else {
+						m.searchType = "filename"
+					}
+					return m, func() tea.Msg { return m.performSearch() }
+				case "j", "down":
+					if m.cursor < len(m.searchResults)-1 {
+						m.cursor++
+					}
+				case "k", "up":
+					if m.cursor > 0 {
+						m.cursor--
+					}
+				case "enter":
+					// Open selected result
+					if m.cursor < len(m.searchResults) {
+						item := m.searchResults[m.cursor]
+						if item.Note != nil {
+							m.fullNote = item.Note
+							m.contentLines = strings.Split(item.Note.Content, "\n")
+							m.lineCursor = 0
+							m.colCursor = 0
+							m.showSearch = false
+						}
+					}
+				case "backspace":
+					if len(m.searchQuery) > 0 {
+						m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+						return m, func() tea.Msg { return m.performSearch() }
+					}
+				default:
+					// Add to search query
+					if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
+						m.searchQuery += msg.String()
+						return m, func() tea.Msg { return m.performSearch() }
+					}
+				}
+				return m, nil
+			}
+			
 			// Tree modal is open - handle tree navigation
 			if m.showTree {
 				switch msg.String() {
@@ -233,9 +332,16 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.visualEnd = m.lineCursor
 				}
 			case "y":
-				// Copy in visual mode (placeholder - would need clipboard integration)
+				// Copy selected lines to clipboard
 				if m.visualMode {
-					// TODO: Copy selected lines to clipboard
+					start := min(m.visualStart, m.visualEnd)
+					end := max(m.visualStart, m.visualEnd)
+					var selected []string
+					for i := start; i <= end && i < len(m.contentLines); i++ {
+						selected = append(selected, m.contentLines[i])
+					}
+					text := strings.Join(selected, "\n")
+					clipboard.WriteAll(text)
 					m.visualMode = false
 				}
 			case "t":
@@ -243,6 +349,14 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showTree = !m.showTree
 				if m.showTree {
 					return m, m.loadItems
+				}
+			case "/":
+				// Open search modal
+				m.showSearch = !m.showSearch
+				m.searchQuery = ""
+				m.searchType = "filename"
+				if m.showSearch {
+					return m, func() tea.Msg { return m.performSearch() }
 				}
 			case "s":
 				// Horizontal split
@@ -397,9 +511,17 @@ func (m SimpleModel) View() string {
 		return m.renderHome()
 	case ViewFullNote:
 		base := m.renderFullNote()
+		// Overlay search modal if active
+		if m.showSearch {
+			return m.renderWithSearchModal(base)
+		}
 		// Overlay tree modal if active
 		if m.showTree {
 			return m.renderWithTreeModal(base)
+		}
+		// Render split view if active
+		if m.splitMode != "" && m.splitNote != nil {
+			return m.renderSplitView()
 		}
 		return base
 	default:
@@ -484,80 +606,68 @@ func (m SimpleModel) renderFullNote() string {
 
 	var s strings.Builder
 
-	// Use glamour for beautiful rendering
+	// Render with glamour for beautiful display
+	rendered := m.fullNote.Content
 	if m.renderer != nil {
-		rendered, err := m.renderer.Render(m.fullNote.Content)
+		glamourRendered, err := m.renderer.Render(m.fullNote.Content)
 		if err == nil {
-			lines := strings.Split(rendered, "\n")
-			
-			// Scrollable view
-			maxLines := m.height - 5
-			start := m.lineCursor - maxLines/2
-			if start < 0 {
-				start = 0
-			}
-			if start > len(lines)-maxLines {
-				start = max(0, len(lines)-maxLines)
-			}
-			end := min(start+maxLines, len(lines))
-			
-			for i := start; i < end; i++ {
-				s.WriteString(lines[i])
-				s.WriteString("\n")
-			}
-			
-			// Status
-			s.WriteString("\n")
-			mode := ""
-			if m.visualMode {
-				mode = " [VISUAL]"
-			}
-			if m.showTree {
-				mode += " [TREE]"
-			}
-			status := fmt.Sprintf("Line %d/%d%s | %s", m.lineCursor+1, len(lines), mode, m.fullNote.ID)
-			s.WriteString(HelpStyle.Render(status))
-			s.WriteString("\n")
-			help := HelpStyle.Render("j/k=scroll | t=tree | e=edit | esc=back")
-			s.WriteString(help)
-			
-			return s.String()
+			rendered = glamourRendered
 		}
 	}
 
-	// Fallback: raw content with cursor
+	// Split into lines for cursor navigation
+	lines := strings.Split(rendered, "\n")
+	
+	// Keep contentLines in sync for link detection
+	if len(m.contentLines) == 0 {
+		m.contentLines = strings.Split(m.fullNote.Content, "\n")
+	}
+
+	// Scrollable view centered on cursor
 	maxLines := m.height - 5
 	start := m.lineCursor - maxLines/2
 	if start < 0 {
 		start = 0
 	}
-	if start > len(m.contentLines)-maxLines {
-		start = max(0, len(m.contentLines)-maxLines)
+	if start > len(lines)-maxLines {
+		start = max(0, len(lines)-maxLines)
 	}
-	end := min(start+maxLines, len(m.contentLines))
+	end := min(start+maxLines, len(lines))
 
+	// Render lines with cursor and visual selection
 	for i := start; i < end; i++ {
 		line := ""
-		if i < len(m.contentLines) {
-			line = m.contentLines[i]
+		if i < len(lines) {
+			line = lines[i]
 		}
 
-		// Visual mode
+		// Visual mode highlighting
 		inVisual := m.visualMode && i >= min(m.visualStart, m.visualEnd) && i <= max(m.visualStart, m.visualEnd)
 		
-		// Cursor
-		if i == m.lineCursor && m.colCursor <= len(line) {
-			before := line[:m.colCursor]
-			cursor := "█"
-			after := ""
-			if m.colCursor < len(line) {
-				cursor = lipgloss.NewStyle().
-					Background(accentColor).
-					Foreground(lipgloss.Color("0")).
-					Render(string(line[m.colCursor]))
-				after = line[m.colCursor+1:]
+		// Show cursor on current line
+		if i == m.lineCursor {
+			// Find cursor position in rendered line (approximate)
+			cursorPos := m.colCursor
+			if cursorPos > len(line) {
+				cursorPos = len(line)
 			}
-			line = before + cursor + after
+			
+			if cursorPos <= len(line) {
+				before := ""
+				if cursorPos > 0 {
+					before = line[:cursorPos]
+				}
+				cursor := "█"
+				after := ""
+				if cursorPos < len(line) {
+					cursor = lipgloss.NewStyle().
+						Background(accentColor).
+						Foreground(lipgloss.Color("0")).
+						Render(string(line[cursorPos]))
+					after = line[cursorPos+1:]
+				}
+				line = before + cursor + after
+			}
 		}
 
 		if inVisual {
@@ -568,7 +678,7 @@ func (m SimpleModel) renderFullNote() string {
 		s.WriteString("\n")
 	}
 
-	// Status
+	// Status bar
 	s.WriteString("\n")
 	mode := ""
 	if m.visualMode {
@@ -580,7 +690,7 @@ func (m SimpleModel) renderFullNote() string {
 	status := fmt.Sprintf("Ln %d, Col %d%s | %s", m.lineCursor+1, m.colCursor+1, mode, m.fullNote.ID)
 	s.WriteString(HelpStyle.Render(status))
 	s.WriteString("\n")
-	help := HelpStyle.Render("hjkl=move | v=visual | enter=link | t=tree | e=edit | esc=back")
+	help := HelpStyle.Render("hjkl=move | v=visual | y=copy | enter=link | t=tree | /=search | e=edit | esc=back")
 	s.WriteString(help)
 
 	return s.String()
@@ -906,6 +1016,167 @@ func (m SimpleModel) renderPreviewCol(width, height int) string {
 		}
 	}
 
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Render(s.String())
+}
+
+
+func (m SimpleModel) renderWithSearchModal(base string) string {
+	// Telescope-style centered search modal
+	modalWidth := min(m.width-10, 100)
+	modalHeight := min(m.height-6, 35)
+	
+	var modal strings.Builder
+	
+	// Title
+	modal.WriteString(lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Render("🔍 Search Notes"))
+	modal.WriteString("\n\n")
+	
+	// Search type indicator
+	typeIndicator := "Filename"
+	if m.searchType == "content" {
+		typeIndicator = "Content"
+	}
+	modal.WriteString(lipgloss.NewStyle().
+		Foreground(mutedColor).
+		Render(fmt.Sprintf("[%s] ", typeIndicator)))
+	
+	// Search input
+	modal.WriteString(lipgloss.NewStyle().
+		Foreground(accentColor).
+		Render(m.searchQuery + "█"))
+	modal.WriteString("\n\n")
+	
+	// Results
+	maxResults := modalHeight - 10
+	for i, item := range m.searchResults {
+		if i >= maxResults {
+			break
+		}
+		
+		line := "📄 " + item.Name
+		
+		if i == m.cursor {
+			line = lipgloss.NewStyle().
+				Foreground(accentColor).
+				Background(selectedBg).
+				Bold(true).
+				Render("▸ " + line)
+		} else {
+			line = "  " + line
+		}
+		
+		modal.WriteString(line)
+		modal.WriteString("\n")
+		
+		// Show preview snippet
+		if i == m.cursor && item.Note != nil {
+			preview := strings.Split(item.Note.Content, "\n")[0]
+			if len(preview) > modalWidth-6 {
+				preview = preview[:modalWidth-6] + "..."
+			}
+			modal.WriteString(lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Render("    " + preview))
+			modal.WriteString("\n")
+		}
+	}
+	
+	if len(m.searchResults) == 0 && m.searchQuery != "" {
+		modal.WriteString(DimItemStyle.Render("  No results found"))
+		modal.WriteString("\n")
+	}
+	
+	modal.WriteString("\n")
+	modal.WriteString(HelpStyle.Render("ctrl+f=toggle type | enter=open | esc=close"))
+	
+	// Style modal
+	modalBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accentColor).
+		Padding(1, 2).
+		Width(modalWidth).
+		Render(modal.String())
+	
+	// Center on screen
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalBox,
+	)
+}
+
+func (m SimpleModel) renderSplitView() string {
+	var s strings.Builder
+	
+	if m.splitMode == "horizontal" {
+		// Top and bottom
+		topHeight := m.height / 2
+		bottomHeight := m.height - topHeight - 1
+		
+		// Render main note
+		s.WriteString(m.renderNoteInBox(m.fullNote, m.width, topHeight))
+		s.WriteString("\n")
+		s.WriteString(strings.Repeat("─", m.width))
+		s.WriteString("\n")
+		
+		// Render split note
+		s.WriteString(m.renderNoteInBox(m.splitNote, m.width, bottomHeight))
+	} else {
+		// Left and right
+		leftWidth := m.width / 2
+		rightWidth := m.width - leftWidth - 1
+		
+		left := m.renderNoteInBox(m.fullNote, leftWidth, m.height)
+		right := m.renderNoteInBox(m.splitNote, rightWidth, m.height)
+		
+		s.WriteString(lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			left,
+			lipgloss.NewStyle().Foreground(mutedColor).Render("│"),
+			right,
+		))
+	}
+	
+	return s.String()
+}
+
+func (m SimpleModel) renderNoteInBox(note *domain.Note, width, height int) string {
+	if note == nil {
+		return lipgloss.NewStyle().
+			Width(width).
+			Height(height).
+			Render("No note")
+	}
+	
+	var s strings.Builder
+	
+	// Title
+	s.WriteString(lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Render(note.Title))
+	s.WriteString("\n\n")
+	
+	// Content
+	lines := strings.Split(note.Content, "\n")
+	maxLines := height - 4
+	for i := 0; i < min(len(lines), maxLines); i++ {
+		line := lines[i]
+		if len(line) > width-2 {
+			line = line[:width-2] + "..."
+		}
+		s.WriteString(line)
+		s.WriteString("\n")
+	}
+	
 	return lipgloss.NewStyle().
 		Width(width).
 		Height(height).
