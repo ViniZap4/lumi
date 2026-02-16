@@ -31,7 +31,7 @@ func main() {
 	}
 
 	p := tea.NewProgram(
-		ui.NewModel(rootDir),
+		ui.NewSimpleModel(rootDir),
 		tea.WithAltScreen(),
 	)
 
