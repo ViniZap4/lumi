@@ -21,8 +21,11 @@ export async function getNotes(path = '') {
 }
 
 export async function getNote(id) {
-  const res = await fetch(`${API_URL}/api/notes/${id}`, { headers });
-  if (!res.ok) throw new Error('Failed to fetch note');
+  // Remove .md extension if present and encode
+  const cleanId = id.replace(/\.md$/, '');
+  const encodedId = encodeURIComponent(cleanId);
+  const res = await fetch(`${API_URL}/api/notes/${encodedId}`, { headers });
+  if (!res.ok) throw new Error(`Failed to fetch note: ${res.status} ${res.statusText}`);
   return res.json();
 }
 
@@ -37,12 +40,14 @@ export async function createNote(note) {
 }
 
 export async function updateNote(id, note) {
-  const res = await fetch(`${API_URL}/api/notes/${id}`, {
+  const cleanId = id.replace(/\.md$/, '');
+  const encodedId = encodeURIComponent(cleanId);
+  const res = await fetch(`${API_URL}/api/notes/${encodedId}`, {
     method: 'PUT',
     headers,
     body: JSON.stringify(note),
   });
-  if (!res.ok) throw new Error('Failed to update note');
+  if (!res.ok) throw new Error(`Failed to update note: ${res.status}`);
   return res.json();
 }
 
