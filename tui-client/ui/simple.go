@@ -117,12 +117,7 @@ func (m SimpleModel) searchRecursive(query string) []Item {
 
 // Search in content or filename
 func (m SimpleModel) performSearch() tea.Msg {
-	if m.searchQuery == "" {
-		return searchResultsMsg{[]Item{}}
-	}
-	
 	var results []Item
-	query := strings.ToLower(m.searchQuery)
 	
 	filepath.Walk(m.rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
@@ -134,6 +129,20 @@ func (m SimpleModel) performSearch() tea.Msg {
 			return nil
 		}
 		
+		// If query is empty, show all notes
+		if m.searchQuery == "" {
+			relPath, _ := filepath.Rel(m.rootDir, path)
+			results = append(results, Item{
+				Name:     relPath,
+				IsFolder: false,
+				Path:     path,
+				Note:     note,
+			})
+			return nil
+		}
+		
+		// Otherwise filter by query
+		query := strings.ToLower(m.searchQuery)
 		match := false
 		if m.searchType == "filename" {
 			match = strings.Contains(strings.ToLower(info.Name()), query)
@@ -273,16 +282,16 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			
 			// Normal home view keys
 			switch msg.String() {
-			case "ctrl+q":
+			case "q", "ctrl+c":
 				return m, tea.Quit
-			case "ctrl+f":
+			case "/":
 				// Open search modal from home
 				m.showSearch = true
 				m.searchQuery = ""
 				m.searchType = "filename"
 				m.inFileSearch = false
 				return m, func() tea.Msg { return m.performSearch() }
-			case "ctrl+c":
+			case "c":
 				// Edit config - create if doesn't exist
 				configDir := filepath.Join(os.Getenv("HOME"), ".config", "lumi")
 				configPath := filepath.Join(configDir, "config.yaml")
@@ -305,7 +314,7 @@ theme: dark
 					editorCmd = "nvim"
 				}
 				return m, tea.ExecProcess(exec.Command(editorCmd, configPath), nil)
-			case "ctrl+t", "enter":
+			case "t", "enter":
 				m.viewMode = ViewTree
 				return m, m.loadItems
 			}
@@ -1141,10 +1150,10 @@ func (m SimpleModel) renderHome() string {
 		Width(m.width).
 		Align(lipgloss.Center).
 		Render(
-			"ctrl+f  Search notes\n" +
-			"ctrl+t  Browse tree\n" +
-			"ctrl+c  Edit config\n" +
-			"ctrl+q  Quit",
+			"/  Search notes\n" +
+			"t  Browse tree\n" +
+			"c  Edit config\n" +
+			"q  Quit",
 		)
 	
 	s.WriteString(keysContent)
@@ -1378,23 +1387,7 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 	modal.WriteString("\n\n")
 	
 	// Results section or help
-	if m.searchQuery == "" {
-		// Show help when empty
-		helpText := lipgloss.NewStyle().
-			Foreground(mutedColor).
-			Width(modalWidth - 8).
-			Align(lipgloss.Center).
-			Render(
-				"Type to search notes\n\n" +
-				"ctrl+f  Toggle filename/content\n" +
-				"enter   Open note\n" +
-				"s       Open in horizontal split\n" +
-				"S       Open in vertical split\n" +
-				"esc     Close",
-			)
-		modal.WriteString(helpText)
-		modal.WriteString("\n")
-	} else if len(m.searchResults) == 0 {
+	if len(m.searchResults) == 0 {
 		modal.WriteString(lipgloss.NewStyle().
 			Foreground(mutedColor).
 			Italic(true).
