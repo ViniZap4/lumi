@@ -1,8 +1,10 @@
 <script>
   import { onMount } from 'svelte';
-  import { getNotes, getNote, updateNote } from './lib/api.js';
+  import { getNotes, getFolders, getNote, updateNote } from './lib/api.js';
 
+  let folders = [];
   let notes = [];
+  let currentPath = '';
   let selectedNote = null;
   let content = '';
   let title = '';
@@ -12,46 +14,73 @@
   let cursor = 0;
 
   onMount(async () => {
-    await loadNotes();
+    await loadAll();
     window.addEventListener('keydown', handleGlobalKey);
     return () => window.removeEventListener('keydown', handleGlobalKey);
   });
 
-  async function loadNotes() {
+  async function loadAll() {
     try {
       error = null;
-      notes = await getNotes();
-      filterNotes();
+      folders = await getFolders();
+      notes = await getNotes(currentPath);
+      filterItems();
     } catch (err) {
-      error = 'Failed to load notes: ' + err.message;
+      error = 'Failed to load: ' + err.message;
       console.error(err);
     }
   }
 
-  let filteredNotes = [];
-  function filterNotes() {
+  let filteredItems = [];
+  function filterItems() {
+    let items = [];
+    
+    // Add folders first
+    folders.forEach(f => {
+      items.push({ type: 'folder', name: f.name, path: f.path, data: f });
+    });
+    
+    // Add notes
+    notes.forEach(n => {
+      items.push({ type: 'note', name: n.title || n.id, data: n });
+    });
+    
+    // Filter by search
     if (search) {
-      filteredNotes = notes.filter(n => 
-        n.title?.toLowerCase().includes(search.toLowerCase()) ||
-        n.id?.toLowerCase().includes(search.toLowerCase())
+      items = items.filter(item => 
+        item.name?.toLowerCase().includes(search.toLowerCase())
       );
-    } else {
-      filteredNotes = notes;
     }
-    cursor = Math.min(cursor, filteredNotes.length - 1);
+    
+    filteredItems = items;
+    cursor = Math.min(cursor, filteredItems.length - 1);
   }
 
-  $: if (search !== undefined) filterNotes();
+  $: if (search !== undefined) filterItems();
 
   async function selectNote(note) {
     try {
       error = null;
-      selectedNote = await getNote(note.id);
+      const noteId = note.id || note.ID;
+      if (!noteId) {
+        error = 'Note has no ID';
+        return;
+      }
+      selectedNote = await getNote(noteId);
       title = selectedNote.title || '';
       content = selectedNote.content || '';
     } catch (err) {
       error = 'Failed to load note: ' + err.message;
-      console.error(err);
+      console.error('Note load error:', err, 'Note:', note);
+    }
+  }
+
+  async function openItem(item) {
+    if (item.type === 'folder') {
+      currentPath = item.path;
+      await loadAll();
+    } else {
+      await selectNote(item.data);
     }
   }
 
@@ -81,7 +110,7 @@
     switch(e.key) {
       case 'j':
         e.preventDefault();
-        if (cursor < filteredNotes.length - 1) cursor++;
+        if (cursor < filteredItems.length - 1) cursor++;
         break;
       case 'k':
         e.preventDefault();
@@ -89,8 +118,8 @@
         break;
       case 'Enter':
         e.preventDefault();
-        if (filteredNotes[cursor]) {
-          selectNote(filteredNotes[cursor]);
+        if (filteredItems[cursor]) {
+          openItem(filteredItems[cursor]);
         }
         break;
       case 'Escape':
@@ -125,18 +154,18 @@
       </div>
 
       <div class="notes-list">
-        {#each filteredNotes as note, i}
+        {#each filteredItems as item, i}
           <div 
             class="note-item"
             class:selected={i === cursor}
-            on:click={() => { cursor = i; selectNote(note); }}
+            on:click={() => { cursor = i; openItem(item); }}
           >
-            <span class="icon">📄</span>
-            <span class="title">{note.title || note.id}</span>
+            <span class="icon">{item.type === 'folder' ? '📁' : '📄'}</span>
+            <span class="title">{item.name}{item.type === 'folder' ? '/' : ''}</span>
           </div>
         {/each}
-        {#if filteredNotes.length === 0}
-          <div class="empty">No notes found</div>
+        {#if filteredItems.length === 0}
+          <div class="empty">No items found</div>
         {/if}
       </div>
 
