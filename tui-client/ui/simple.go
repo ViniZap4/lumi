@@ -298,6 +298,29 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.lineCursor = 0
 							m.colCursor = 0
 							m.showSearch = false
+							m.cursor = 0
+						}
+					}
+				case "s":
+					// Open in horizontal split
+					if m.cursor < len(m.searchResults) {
+						item := m.searchResults[m.cursor]
+						if item.Note != nil {
+							m.splitMode = "horizontal"
+							m.splitNote = item.Note
+							m.showSearch = false
+							m.cursor = 0
+						}
+					}
+				case "S":
+					// Open in vertical split
+					if m.cursor < len(m.searchResults) {
+						item := m.searchResults[m.cursor]
+						if item.Note != nil {
+							m.splitMode = "vertical"
+							m.splitNote = item.Note
+							m.showSearch = false
+							m.cursor = 0
 						}
 					}
 				case "backspace":
@@ -346,18 +369,29 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.cursor = 0
 							return m, m.loadItems
 						} else if item.Note != nil {
-							// If split mode is active, open in split
-							if m.splitMode != "" {
-								m.splitNote = item.Note
-								m.showTree = false
-							} else {
-								m.fullNote = item.Note
-								m.contentLines = strings.Split(item.Note.Content, "\n")
-								m.lineCursor = 0
-								m.colCursor = 0
-								m.showTree = false
-							}
+							m.fullNote = item.Note
+							m.contentLines = strings.Split(item.Note.Content, "\n")
+							m.lineCursor = 0
+							m.colCursor = 0
+							m.showTree = false
+							m.cursor = 0
 						}
+					}
+				case "s":
+					// Open in horizontal split
+					if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
+						m.splitMode = "horizontal"
+						m.splitNote = m.items[m.cursor].Note
+						m.showTree = false
+						m.cursor = 0
+					}
+				case "S":
+					// Open in vertical split
+					if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
+						m.splitMode = "vertical"
+						m.splitNote = m.items[m.cursor].Note
+						m.showTree = false
+						m.cursor = 0
 					}
 				}
 				return m, nil
@@ -794,12 +828,11 @@ func (m SimpleModel) renderFullNote() string {
 
 func (m SimpleModel) renderWithTreeModal(base string) string {
 	// Render tree as centered modal overlay
-	modalWidth := min(m.width-10, 80)
-	modalHeight := min(m.height-6, 30)
+	modalWidth := min(m.width-10, 90)
 	
 	var modal strings.Builder
 	
-	// Show current path
+	// Show current path with parent indicator
 	pathDisplay := strings.TrimPrefix(m.currentDir, m.rootDir)
 	if pathDisplay == "" {
 		pathDisplay = "~"
@@ -807,14 +840,27 @@ func (m SimpleModel) renderWithTreeModal(base string) string {
 		pathDisplay = "~" + pathDisplay
 	}
 	
+	// Show parent folder if not at root
+	parentInfo := ""
+	if m.currentDir != m.rootDir {
+		parentDir := filepath.Dir(m.currentDir)
+		parentName := filepath.Base(parentDir)
+		if parentName == filepath.Base(m.rootDir) {
+			parentName = "~"
+		}
+		parentInfo = lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Render(" ← " + parentName)
+	}
+	
 	modal.WriteString(lipgloss.NewStyle().
 		Bold(true).
 		Foreground(primaryColor).
-		Render("📂 " + pathDisplay))
+		Render("📂 " + pathDisplay + parentInfo))
 	modal.WriteString("\n\n")
 	
-	// Items
-	maxItems := modalHeight - 8
+	// Items list
+	maxItems := 12
 	for i, item := range m.items {
 		if i >= maxItems {
 			break
@@ -847,8 +893,34 @@ func (m SimpleModel) renderWithTreeModal(base string) string {
 		modal.WriteString("\n")
 	}
 	
+	// Preview section for selected note
+	if m.cursor >= 0 && m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
+		modal.WriteString("\n")
+		modal.WriteString(strings.Repeat("─", modalWidth-4))
+		modal.WriteString("\n")
+		modal.WriteString(lipgloss.NewStyle().
+			Foreground(primaryColor).
+			Bold(true).
+			Render("Preview"))
+		modal.WriteString("\n\n")
+		
+		note := m.items[m.cursor].Note
+		previewLines := strings.Split(note.Content, "\n")
+		maxPreview := 5
+		for i := 0; i < min(len(previewLines), maxPreview); i++ {
+			line := previewLines[i]
+			if len(line) > modalWidth-6 {
+				line = line[:modalWidth-6] + "..."
+			}
+			modal.WriteString(lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Render("  " + line))
+			modal.WriteString("\n")
+		}
+	}
+	
 	modal.WriteString("\n")
-	modal.WriteString(HelpStyle.Render("hjkl=navigate | l/enter=open | h=back | esc=close"))
+	modal.WriteString(HelpStyle.Render("hjkl=navigate | enter=open | s=split-h | S=split-v | h=back | esc=close"))
 	
 	// Style modal
 	modalBox := lipgloss.NewStyle().
@@ -1156,7 +1228,6 @@ func (m SimpleModel) renderPreviewCol(width, height int) string {
 func (m SimpleModel) renderWithSearchModal(base string) string {
 	// Telescope-style centered search modal
 	modalWidth := min(m.width-10, 100)
-	modalHeight := min(m.height-6, 35)
 	
 	var modal strings.Builder
 	
@@ -1168,30 +1239,39 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 	modal.WriteString("\n\n")
 	
 	// Search type indicator and input
-	typeIndicator := "Filename"
+	typeIndicator := "📄 Filename"
 	if m.searchType == "content" {
-		typeIndicator = "Content"
+		typeIndicator = "📝 Content"
 	}
-	searchLine := fmt.Sprintf("[%s] %s█", typeIndicator, m.searchQuery)
+	searchLine := fmt.Sprintf("%s: %s█", typeIndicator, m.searchQuery)
 	modal.WriteString(lipgloss.NewStyle().
 		Foreground(accentColor).
+		Bold(true).
 		Render(searchLine))
-	modal.WriteString("\n")
+	modal.WriteString("\n\n")
 	
-	// Separator
+	// Results count
+	modal.WriteString(lipgloss.NewStyle().
+		Foreground(mutedColor).
+		Render(fmt.Sprintf("%d results", len(m.searchResults))))
+	modal.WriteString("\n")
 	modal.WriteString(strings.Repeat("─", modalWidth-4))
-	modal.WriteString("\n")
+	modal.WriteString("\n\n")
 	
-	// Results list (left side)
-	maxResults := (modalHeight - 12) / 2
+	// Results list
+	maxResults := 8
 	for i, item := range m.searchResults {
 		if i >= maxResults {
 			break
 		}
 		
-		line := "📄 " + item.Name
-		if len(line) > modalWidth/2-4 {
-			line = line[:modalWidth/2-4] + "..."
+		icon := "📄"
+		if item.IsFolder {
+			icon = "📁"
+		}
+		line := icon + " " + item.Name
+		if len(line) > modalWidth-8 {
+			line = line[:modalWidth-8] + "..."
 		}
 		
 		if i == m.cursor {
@@ -1216,14 +1296,17 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 	// Preview section
 	if m.cursor >= 0 && m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
 		modal.WriteString("\n")
-		modal.WriteString(lipgloss.NewStyle().
-			Foreground(mutedColor).
-			Render("Preview:"))
+		modal.WriteString(strings.Repeat("─", modalWidth-4))
 		modal.WriteString("\n")
+		modal.WriteString(lipgloss.NewStyle().
+			Foreground(primaryColor).
+			Bold(true).
+			Render("Preview"))
+		modal.WriteString("\n\n")
 		
 		note := m.searchResults[m.cursor].Note
 		previewLines := strings.Split(note.Content, "\n")
-		maxPreview := 5
+		maxPreview := 6
 		for i := 0; i < min(len(previewLines), maxPreview); i++ {
 			line := previewLines[i]
 			if len(line) > modalWidth-6 {
@@ -1237,7 +1320,7 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 	}
 	
 	modal.WriteString("\n")
-	modal.WriteString(HelpStyle.Render(fmt.Sprintf("ctrl+f=toggle | j/k=navigate | enter=open | esc=close | %d results", len(m.searchResults))))
+	modal.WriteString(HelpStyle.Render("ctrl+f=toggle | enter=open | s=split-h | S=split-v | esc=close"))
 	
 	// Style modal
 	modalBox := lipgloss.NewStyle().
