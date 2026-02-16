@@ -2,7 +2,6 @@
 package ws
 
 import (
-	"encoding/json"
 	"log"
 	"sync"
 

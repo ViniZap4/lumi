@@ -4,12 +4,10 @@ package http
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gorilla/websocket"
-	"github.com/vinizap/lumi/server/domain"
 	"github.com/vinizap/lumi/server/filesystem"
 	"github.com/vinizap/lumi/server/ws"
 )
