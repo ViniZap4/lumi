@@ -218,13 +218,6 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter", "t":
 				m.viewMode = ViewTree
 				return m, m.loadItems
-			default:
-				// Start search from home
-				if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
-					m.search = msg.String()
-					m.viewMode = ViewTree
-					return m, m.loadItems
-				}
 			}
 			return m, nil
 		}
@@ -895,7 +888,7 @@ func (m SimpleModel) renderHome() string {
 		Bold(true).
 		Width(m.width).
 		Align(lipgloss.Center).
-		MarginTop(3)
+		MarginTop(m.height/4)
 	s.WriteString(artStyle.Render(art))
 	s.WriteString("\n\n")
 
@@ -909,22 +902,22 @@ func (m SimpleModel) renderHome() string {
 	s.WriteString(subtitle)
 	s.WriteString("\n\n\n")
 
-	// Search prompt
-	searchPrompt := lipgloss.NewStyle().
-		Foreground(secondaryColor).
-		Width(m.width).
-		Align(lipgloss.Center).
-		Render("Type to search or press Enter to browse")
-	s.WriteString(searchPrompt)
-	s.WriteString("\n\n")
-
-	// Help
-	help := HelpStyle.Render("enter=browse | type=search | q=quit")
-	helpCentered := lipgloss.NewStyle().
-		Width(m.width).
-		Align(lipgloss.Center).
-		Render(help)
-	s.WriteString(helpCentered)
+	// Keybindings
+	keys := []string{
+		"/ - Search notes",
+		"enter - Browse tree",
+		"q - Quit",
+	}
+	
+	for _, key := range keys {
+		keyLine := lipgloss.NewStyle().
+			Foreground(secondaryColor).
+			Width(m.width).
+			Align(lipgloss.Center).
+			Render(key)
+		s.WriteString(keyLine)
+		s.WriteString("\n")
+	}
 
 	return s.String()
 }
@@ -1106,29 +1099,32 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 		Render("🔍 Search Notes"))
 	modal.WriteString("\n\n")
 	
-	// Search type indicator
+	// Search type indicator and input
 	typeIndicator := "Filename"
 	if m.searchType == "content" {
 		typeIndicator = "Content"
 	}
-	modal.WriteString(lipgloss.NewStyle().
-		Foreground(mutedColor).
-		Render(fmt.Sprintf("[%s] ", typeIndicator)))
-	
-	// Search input
+	searchLine := fmt.Sprintf("[%s] %s█", typeIndicator, m.searchQuery)
 	modal.WriteString(lipgloss.NewStyle().
 		Foreground(accentColor).
-		Render(m.searchQuery + "█"))
-	modal.WriteString("\n\n")
+		Render(searchLine))
+	modal.WriteString("\n")
 	
-	// Results
-	maxResults := modalHeight - 10
+	// Separator
+	modal.WriteString(strings.Repeat("─", modalWidth-4))
+	modal.WriteString("\n")
+	
+	// Results list (left side)
+	maxResults := (modalHeight - 12) / 2
 	for i, item := range m.searchResults {
 		if i >= maxResults {
 			break
 		}
 		
 		line := "📄 " + item.Name
+		if len(line) > modalWidth/2-4 {
+			line = line[:modalWidth/2-4] + "..."
+		}
 		
 		if i == m.cursor {
 			line = lipgloss.NewStyle().
@@ -1142,18 +1138,6 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 		
 		modal.WriteString(line)
 		modal.WriteString("\n")
-		
-		// Show preview snippet
-		if i == m.cursor && item.Note != nil {
-			preview := strings.Split(item.Note.Content, "\n")[0]
-			if len(preview) > modalWidth-6 {
-				preview = preview[:modalWidth-6] + "..."
-			}
-			modal.WriteString(lipgloss.NewStyle().
-				Foreground(mutedColor).
-				Render("    " + preview))
-			modal.WriteString("\n")
-		}
 	}
 	
 	if len(m.searchResults) == 0 && m.searchQuery != "" {
@@ -1161,8 +1145,31 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 		modal.WriteString("\n")
 	}
 	
+	// Preview section
+	if m.cursor >= 0 && m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
+		modal.WriteString("\n")
+		modal.WriteString(lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Render("Preview:"))
+		modal.WriteString("\n")
+		
+		note := m.searchResults[m.cursor].Note
+		previewLines := strings.Split(note.Content, "\n")
+		maxPreview := 5
+		for i := 0; i < min(len(previewLines), maxPreview); i++ {
+			line := previewLines[i]
+			if len(line) > modalWidth-6 {
+				line = line[:modalWidth-6] + "..."
+			}
+			modal.WriteString(lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Render("  " + line))
+			modal.WriteString("\n")
+		}
+	}
+	
 	modal.WriteString("\n")
-	modal.WriteString(HelpStyle.Render("ctrl+f=toggle type | enter=open | esc=close"))
+	modal.WriteString(HelpStyle.Render(fmt.Sprintf("ctrl+f=toggle | j/k=navigate | enter=open | esc=close | %d results", len(m.searchResults))))
 	
 	// Style modal
 	modalBox := lipgloss.NewStyle().
