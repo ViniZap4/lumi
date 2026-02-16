@@ -29,8 +29,24 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/api/folders", auth.Middleware(server.HandleFolders))
-	mux.HandleFunc("/api/notes", auth.Middleware(func(w http.ResponseWriter, r *http.Request) {
+	// CORS middleware
+	corsMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Lumi-Token")
+			
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			
+			next(w, r)
+		}
+	}
+
+	mux.HandleFunc("/api/folders", corsMiddleware(auth.Middleware(server.HandleFolders)))
+	mux.HandleFunc("/api/notes", corsMiddleware(auth.Middleware(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			server.HandleNotes(w, r)
@@ -39,9 +55,9 @@ func main() {
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	}))
+	})))
 
-	mux.HandleFunc("/api/notes/", auth.Middleware(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/notes/", corsMiddleware(auth.Middleware(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			server.HandleGetNote(w, r)
@@ -52,9 +68,9 @@ func main() {
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	}))
+	})))
 
-	mux.HandleFunc("/ws", server.HandleWebSocket)
+	mux.HandleFunc("/ws", corsMiddleware(server.HandleWebSocket))
 
 	log.Printf("Server starting on :%s with root: %s", port, rootDir)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
