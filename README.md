@@ -41,13 +41,14 @@ go build -o lumi
 
 **Keybindings:**
 - `h/l` - Navigate left/right (folders ↔ notes ↔ preview)
-- `j/k` - Move down/up (or scroll in preview)
+- `j/k` - Move down/up (or scroll in preview/full view)
 - `enter` - Open folder / Edit note / Follow link
 - `e` - Edit note in $EDITOR
 - `n` - Create new note
 - `d` - Delete note
 - `g/G` - Jump to top/bottom
-- `v` - Toggle preview (off/partial/full)
+- `v` - Toggle view (off → partial → full → full screen)
+- `t` - Open tree browser (in full screen view)
 - `L` - Show all links in current note
 - `q` - Quit
 

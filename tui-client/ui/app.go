@@ -29,6 +29,7 @@ const (
 	modeNewNote
 	modeDelete
 	modeLinks
+	modeTree
 )
 
 type Model struct {
@@ -40,6 +41,7 @@ type Model struct {
 	noteCursor    int
 	previewScroll int
 	linkCursor    int
+	treeFocus     int // 0=folders, 1=notes in tree modal
 	focus         focusPanel
 	mode          inputMode
 	previewMode   PreviewMode
@@ -173,6 +175,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.mode == modeTree {
+			switch msg.String() {
+			case "h":
+				m.treeFocus = 0
+				return m, nil
+			case "l":
+				m.treeFocus = 1
+				return m, nil
+			case "j":
+				if m.treeFocus == 0 {
+					if m.folderCursor < len(m.folders)-1 {
+						m.folderCursor++
+					}
+				} else {
+					if m.noteCursor < len(m.notes)-1 {
+						m.noteCursor++
+					}
+				}
+				return m, nil
+			case "k":
+				if m.treeFocus == 0 {
+					if m.folderCursor > 0 {
+						m.folderCursor--
+					}
+				} else {
+					if m.noteCursor > 0 {
+						m.noteCursor--
+					}
+				}
+				return m, nil
+			case "enter":
+				if m.treeFocus == 0 {
+					m.mode = modeNormal
+					return m.enterFolder()
+				} else {
+					m.mode = modeNormal
+					m.previewMode = ViewFull
+					m.focus = focusPreview
+					m.previewScroll = 0
+					return m, nil
+				}
+			case "esc", "q":
+				m.mode = modeNormal
+				return m, nil
+			}
+			return m, nil
+		}
+
 		// Normal mode
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -217,12 +267,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case PreviewPartial:
 				m.previewMode = PreviewFull
 			case PreviewFull:
+				m.previewMode = ViewFull
+				m.focus = focusPreview
+			case ViewFull:
 				m.previewMode = PreviewOff
 				if m.focus == focusPreview {
 					m.focus = focusNotes
 				}
 			}
 			m.previewScroll = 0
+			return m, nil
+		case "t":
+			// Open tree modal (only in full view)
+			if m.previewMode == ViewFull {
+				m.mode = modeTree
+				m.treeFocus = 1 // Start on notes
+			}
 			return m, nil
 		case "enter":
 			if m.focus == focusFolders {
@@ -482,6 +542,41 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
+	// Full view mode - single panel
+	if m.previewMode == ViewFull {
+		var selectedNote *domain.Note
+		if len(m.notes) > 0 && m.noteCursor < len(m.notes) {
+			selectedNote = m.notes[m.noteCursor].note
+		}
+
+		fullView := m.renderFullView(selectedNote)
+		
+		// Help bar for full view
+		helpKeys := []string{
+			HelpKeyStyle.Render("q") + "=quit",
+			HelpKeyStyle.Render("j/k") + "=scroll",
+			HelpKeyStyle.Render("e") + "=edit",
+			HelpKeyStyle.Render("t") + "=tree",
+			HelpKeyStyle.Render("v") + "=exit full",
+			HelpKeyStyle.Render("L") + "=links",
+		}
+		help := HelpStyle.Render(strings.Join(helpKeys, " | "))
+
+		view := lipgloss.JoinVertical(lipgloss.Left, fullView, help)
+		
+		// Show tree modal if active
+		if m.mode == modeTree {
+			modal := m.renderTreeModal()
+			view = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal, lipgloss.WithWhitespaceChars(" "))
+		} else if m.mode == modeLinks {
+			modal := m.renderLinksModal()
+			view = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal, lipgloss.WithWhitespaceChars(" "))
+		}
+
+		return view
+	}
+
+	// Normal 3-panel view
 	// Calculate dimensions
 	var foldersWidth, notesWidth, previewWidth int
 	if m.previewMode == PreviewOff {
@@ -565,7 +660,7 @@ func (m Model) View() string {
 			HelpKeyStyle.Render("e") + "=edit",
 			HelpKeyStyle.Render("n") + "=new",
 			HelpKeyStyle.Render("d") + "=delete",
-			HelpKeyStyle.Render("v") + "=preview",
+			HelpKeyStyle.Render("v") + "=view",
 			HelpKeyStyle.Render("L") + "=links",
 		}
 		help = HelpStyle.Render(strings.Join(helpKeys, " | "))
@@ -732,6 +827,158 @@ func (m Model) renderLinksModal() string {
 			content.WriteString("\n")
 		}
 	}
+
+	modal := lipgloss.NewStyle().
+		Width(modalWidth).
+		Height(modalHeight).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(primaryColor).
+		Padding(1, 2).
+		Background(bgColor).
+		Render(content.String())
+
+	return modal
+}
+
+func (m Model) renderFullView(note *domain.Note) string {
+	if note == nil {
+		return DimItemStyle.Render("No note selected")
+	}
+
+	var content strings.Builder
+
+	// Title - centered and prominent
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Width(m.width).
+		Align(lipgloss.Center).
+		MarginBottom(1)
+	content.WriteString(titleStyle.Render(note.Title))
+	content.WriteString("\n")
+
+	// Metadata - centered
+	metaText := note.ID + " • " + note.CreatedAt.Format("2006-01-02")
+	if len(note.Tags) > 0 {
+		metaText += " • " + strings.Join(note.Tags, ", ")
+	}
+	metaStyle := lipgloss.NewStyle().
+		Foreground(mutedColor).
+		Italic(true).
+		Width(m.width).
+		Align(lipgloss.Center).
+		MarginBottom(2)
+	content.WriteString(metaStyle.Render(metaText))
+	content.WriteString("\n")
+
+	// Content with scroll
+	noteContent := note.Content
+	lines := strings.Split(noteContent, "\n")
+
+	// Apply scroll
+	if m.previewScroll > len(lines) {
+		m.previewScroll = max(0, len(lines)-1)
+	}
+
+	visibleLines := m.height - 8
+	start := m.previewScroll
+	end := min(len(lines), start+visibleLines)
+
+	if start < len(lines) {
+		visibleContent := strings.Join(lines[start:end], "\n")
+		visibleContent = highlightLinks(visibleContent)
+		
+		contentStyle := lipgloss.NewStyle().
+			Width(min(m.width-4, 100)).
+			Padding(0, 2)
+		
+		content.WriteString(contentStyle.Render(visibleContent))
+
+		// Scroll indicator
+		scrollInfo := fmt.Sprintf("Line %d/%d", start+1, len(lines))
+		if end < len(lines) {
+			scrollInfo += " (more below)"
+		}
+		scrollStyle := lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Width(m.width).
+			Align(lipgloss.Center).
+			MarginTop(1)
+		content.WriteString("\n" + scrollStyle.Render(scrollInfo))
+	}
+
+	return content.String()
+}
+
+func (m Model) renderTreeModal() string {
+	modalWidth := min(80, m.width-4)
+	modalHeight := min(30, m.height-4)
+
+	var content strings.Builder
+	
+	// Split into two columns
+	leftWidth := modalWidth / 2
+	rightWidth := modalWidth - leftWidth
+
+	// Folders column
+	var foldersContent strings.Builder
+	if m.treeFocus == 0 {
+		foldersContent.WriteString(TitleStyle.Render("📁 Folders"))
+	} else {
+		foldersContent.WriteString(DimItemStyle.Render("📁 Folders"))
+	}
+	foldersContent.WriteString("\n\n")
+
+	if len(m.folders) == 0 {
+		foldersContent.WriteString(DimItemStyle.Render("No folders"))
+	} else {
+		maxItems := modalHeight - 6
+		for i := 0; i < min(len(m.folders), maxItems); i++ {
+			folder := m.folders[i].folder
+			line := folder.Name
+			if i == m.folderCursor && m.treeFocus == 0 {
+				line = SelectedItemStyle.Render("▸ " + line)
+			} else {
+				line = NormalItemStyle.Render("  " + line)
+			}
+			foldersContent.WriteString(line + "\n")
+		}
+	}
+
+	// Notes column
+	var notesContent strings.Builder
+	if m.treeFocus == 1 {
+		notesContent.WriteString(TitleStyle.Render("📝 Notes"))
+	} else {
+		notesContent.WriteString(DimItemStyle.Render("📝 Notes"))
+	}
+	notesContent.WriteString("\n\n")
+
+	if len(m.notes) == 0 {
+		notesContent.WriteString(DimItemStyle.Render("No notes"))
+	} else {
+		maxItems := modalHeight - 6
+		for i := 0; i < min(len(m.notes), maxItems); i++ {
+			note := m.notes[i].note
+			line := note.Title
+			if i == m.noteCursor && m.treeFocus == 1 {
+				line = SelectedItemStyle.Render("▸ " + line)
+			} else {
+				line = NormalItemStyle.Render("  " + line)
+			}
+			notesContent.WriteString(line + "\n")
+		}
+	}
+
+	// Combine columns
+	foldersPanel := lipgloss.NewStyle().Width(leftWidth).Render(foldersContent.String())
+	notesPanel := lipgloss.NewStyle().Width(rightWidth).Render(notesContent.String())
+	content.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, foldersPanel, notesPanel))
+
+	// Help
+	content.WriteString("\n\n")
+	helpText := HelpStyle.Render("h/l=switch | j/k=move | enter=select | esc=close")
+	content.WriteString(helpText)
 
 	modal := lipgloss.NewStyle().
 		Width(modalWidth).

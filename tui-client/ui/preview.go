@@ -14,6 +14,7 @@ const (
 	PreviewOff PreviewMode = iota
 	PreviewPartial
 	PreviewFull
+	ViewFull // Full screen view of note
 )
 
 func renderPreview(note *domain.Note, mode PreviewMode, width, height int) string {
