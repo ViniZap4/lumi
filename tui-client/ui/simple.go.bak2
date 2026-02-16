@@ -374,39 +374,61 @@ func (m SimpleModel) renderTree() string {
 }
 
 func (m SimpleModel) renderFullNote() string {
-	if m.renderer == nil || m.fullNote == nil {
-		return "Error: No note loaded"
-	}
-
-	rendered, err := m.renderer.Render(m.fullNote.Content)
-	if err != nil {
-		rendered = m.fullNote.Content
-	}
-
-	lines := strings.Split(rendered, "\n")
 	var s strings.Builder
 
-	maxLines := m.height - 4
-	start := m.lineCursor
-	if start > len(lines)-maxLines && len(lines) > maxLines {
-		start = len(lines) - maxLines
-	}
-	if start < 0 {
-		start = 0
-	}
+	// Title
+	title := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Width(m.width).
+		Align(lipgloss.Center).
+		Render(m.fullNote.Title)
+	s.WriteString(title)
+	s.WriteString("\n\n")
 
-	end := start + maxLines
-	if end > len(lines) {
-		end = len(lines)
+	// Metadata
+	meta := fmt.Sprintf("%s • %s",
+		m.fullNote.ID,
+		m.fullNote.UpdatedAt.Format("Jan 2, 2006"))
+	if len(m.fullNote.Tags) > 0 {
+		meta += " • " + strings.Join(m.fullNote.Tags, ", ")
 	}
+	metaStyle := lipgloss.NewStyle().
+		Foreground(mutedColor).
+		Width(m.width).
+		Align(lipgloss.Center)
+	s.WriteString(metaStyle.Render(meta))
+	s.WriteString("\n\n")
 
-	for i := start; i < end; i++ {
-		s.WriteString(lines[i])
+	// Content with cursor
+	maxLines := m.height - 8
+	for i := 0; i < min(len(m.contentLines), maxLines); i++ {
+		line := m.contentLines[i]
+		
+		// Show cursor on current line
+		if i == m.lineCursor {
+			if m.colCursor <= len(line) {
+				before := line[:m.colCursor]
+				cursor := "█"
+				after := ""
+				if m.colCursor < len(line) {
+					cursor = lipgloss.NewStyle().
+						Background(accentColor).
+						Foreground(lipgloss.Color("0")).
+						Render(string(line[m.colCursor]))
+					after = line[m.colCursor+1:]
+				}
+				line = before + cursor + after
+			}
+		}
+		
+		s.WriteString(line)
 		s.WriteString("\n")
 	}
 
+	// Help
 	s.WriteString("\n")
-	help := HelpStyle.Render(fmt.Sprintf("j/k=scroll | e=edit | esc=back | Line %d/%d", m.lineCursor+1, len(lines)))
+	help := HelpStyle.Render(fmt.Sprintf("hjkl=move | 0/$=line | enter=follow link | e=edit | esc=back | Ln %d, Col %d", m.lineCursor+1, m.colCursor+1))
 	s.WriteString(help)
 
 	return s.String()
@@ -619,21 +641,7 @@ func (m SimpleModel) renderPreviewCol(width, height int) string {
 				Bold(true).
 				Render("📁 " + item.Name))
 			s.WriteString("\n\n")
-			
-			// Show folder contents
-			folderNotes, _ := filesystem.ListNotes(item.Path)
-			if len(folderNotes) > 0 {
-				s.WriteString(DimItemStyle.Render(fmt.Sprintf("%d notes:", len(folderNotes))))
-				s.WriteString("\n")
-				for i, note := range folderNotes {
-					if i >= height-4 {
-						break
-					}
-					s.WriteString(fmt.Sprintf("  📄 %s\n", note.Title))
-				}
-			} else {
-				s.WriteString(DimItemStyle.Render("(empty folder)"))
-			}
+			s.WriteString(DimItemStyle.Render("Folder"))
 		} else if item.Note != nil {
 			s.WriteString(lipgloss.NewStyle().
 				Foreground(secondaryColor).

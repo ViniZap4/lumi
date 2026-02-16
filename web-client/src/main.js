@@ -1,8 +1,8 @@
 import { mount } from 'svelte'
 import './app.css'
-import AppSimple from './AppSimple.svelte'
+import AppYazi from './AppYazi.svelte'
 
-const app = mount(AppSimple, {
+const app = mount(AppYazi, {
   target: document.getElementById('app'),
 })
 
