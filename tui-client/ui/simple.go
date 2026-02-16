@@ -517,38 +517,31 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inFileSearch = false
 			return m, func() tea.Msg { return m.performSearch() }
 		case "esc":
-			// Clear search
-			m.search = ""
-			m.searchMode = false
-			return m, m.loadItems
+			// Go back to home
+			m.viewMode = ViewHome
+			return m, nil
 		case "j", "down":
-			if m.search == "" { // Only navigate if not searching
-				if m.cursor < len(m.items)-1 {
-					m.cursor++
-				}
+			if m.cursor < len(m.items)-1 {
+				m.cursor++
 			}
 		case "k", "up":
-			if m.search == "" {
-				if m.cursor > 0 {
-					m.cursor--
-				}
+			if m.cursor > 0 {
+				m.cursor--
 			}
 		case "h":
-			// Go up directory (only if not searching)
-			if m.search == "" && m.currentDir != m.rootDir {
+			// Go up directory
+			if m.currentDir != m.rootDir {
 				m.currentDir = filepath.Dir(m.currentDir)
 				m.cursor = 0
-				m.search = ""
 				return m, m.loadItems
 			}
 		case "l", "enter":
-			// Open folder or note (only if not searching)
-			if m.search == "" && m.cursor < len(m.items) {
+			// Open folder or note
+			if m.cursor < len(m.items) {
 				item := m.items[m.cursor]
 				if item.IsFolder {
 					m.currentDir = item.Path
 					m.cursor = 0
-					m.search = ""
 					return m, m.loadItems
 				} else if item.Note != nil {
 					m.viewMode = ViewFullNote
@@ -557,19 +550,6 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.lineCursor = 0
 					m.colCursor = 0
 				}
-			}
-		case "backspace":
-			if len(m.search) > 0 {
-				m.search = m.search[:len(m.search)-1]
-				m.cursor = 0
-				return m, m.loadItems
-			}
-		default:
-			// Add to search
-			if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
-				m.search += msg.String()
-				m.cursor = 0
-				return m, m.loadItems
 			}
 		}
 
@@ -689,7 +669,7 @@ func (m SimpleModel) renderTree() string {
 
 	// Help
 	s.WriteString("\n")
-	help := HelpStyle.Render("hjkl=move | enter=open | type=search | q=quit")
+	help := HelpStyle.Render("hjkl=move | enter=open | /=search | esc=back | q=quit")
 	s.WriteString(help)
 
 	return s.String()
@@ -970,13 +950,6 @@ func (m SimpleModel) renderTreeYazi() string {
 		Foreground(primaryColor).
 		Render("📂 " + pathDisplay)
 	s.WriteString(title)
-
-	if m.search != "" {
-		searchBar := lipgloss.NewStyle().
-			Foreground(accentColor).
-			Render(" 🔍 " + m.search + "█")
-		s.WriteString(searchBar)
-	}
 	s.WriteString("\n\n")
 
 	// Three columns
@@ -996,7 +969,7 @@ func (m SimpleModel) renderTreeYazi() string {
 
 	// Help
 	s.WriteString("\n")
-	help := HelpStyle.Render("hjkl=move | enter=open | type=search | q=quit")
+	help := HelpStyle.Render("hjkl=move | enter=open | /=search | esc=back | q=quit")
 	s.WriteString(help)
 
 	return s.String()
