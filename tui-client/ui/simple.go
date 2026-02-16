@@ -32,6 +32,14 @@ type SimpleModel struct {
 	err          error
 	renderer     *glamour.TermRenderer
 	searchMode   bool // true = recursive search
+	
+	// Enhanced modes
+	visualMode   bool
+	visualStart  int
+	visualEnd    int
+	showTree     bool // tree modal overlay
+	splitMode    string // "", "horizontal", "vertical"
+	splitNote    *domain.Note
 }
 
 type ViewMode int
@@ -167,8 +175,39 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q":
 				return m, tea.Quit
 			case "esc":
-				m.viewMode = ViewTree
+				if m.visualMode {
+					m.visualMode = false
+				} else if m.showTree {
+					m.showTree = false
+				} else {
+					m.viewMode = ViewTree
+				}
 				return m, nil
+			case "v":
+				// Toggle visual mode
+				m.visualMode = !m.visualMode
+				if m.visualMode {
+					m.visualStart = m.lineCursor
+					m.visualEnd = m.lineCursor
+				}
+			case "y":
+				// Copy in visual mode (placeholder - would need clipboard integration)
+				if m.visualMode {
+					// TODO: Copy selected lines to clipboard
+					m.visualMode = false
+				}
+			case "t":
+				// Toggle tree modal
+				m.showTree = !m.showTree
+				if m.showTree {
+					return m, m.loadItems
+				}
+			case "s":
+				// Horizontal split
+				m.splitMode = "horizontal"
+			case "S":
+				// Vertical split
+				m.splitMode = "vertical"
 			case "h":
 				if m.colCursor > 0 {
 					m.colCursor--
@@ -178,18 +217,30 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.colCursor++
 				}
 			case "j":
+				if m.visualMode {
+					m.visualEnd = m.lineCursor
+				}
 				if m.lineCursor < len(m.contentLines)-1 {
 					m.lineCursor++
 					if m.lineCursor < len(m.contentLines) && m.colCursor > len(m.contentLines[m.lineCursor]) {
 						m.colCursor = len(m.contentLines[m.lineCursor])
 					}
 				}
+				if m.visualMode {
+					m.visualEnd = m.lineCursor
+				}
 			case "k":
+				if m.visualMode {
+					m.visualEnd = m.lineCursor
+				}
 				if m.lineCursor > 0 {
 					m.lineCursor--
 					if m.colCursor > len(m.contentLines[m.lineCursor]) {
 						m.colCursor = len(m.contentLines[m.lineCursor])
 					}
+				}
+				if m.visualMode {
+					m.visualEnd = m.lineCursor
 				}
 			case "0":
 				m.colCursor = 0
@@ -221,33 +272,39 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "/":
-			// Toggle recursive search
-			m.searchMode = !m.searchMode
-			if m.searchMode && m.search != "" {
-				m.items = m.searchRecursive(m.search)
-				m.cursor = 0
-			} else {
-				return m, m.loadItems
+			// Start search mode - next chars will be added to search
+			// (search is already being added in default case)
+			if m.search == "" {
+				// Just pressed /, wait for input
 			}
+		case "esc":
+			// Clear search
+			m.search = ""
+			m.searchMode = false
+			return m, m.loadItems
 		case "j", "down":
-			if m.cursor < len(m.items)-1 {
-				m.cursor++
+			if m.search == "" { // Only navigate if not searching
+				if m.cursor < len(m.items)-1 {
+					m.cursor++
+				}
 			}
 		case "k", "up":
-			if m.cursor > 0 {
-				m.cursor--
+			if m.search == "" {
+				if m.cursor > 0 {
+					m.cursor--
+				}
 			}
 		case "h":
-			// Go up directory
-			if m.currentDir != m.rootDir {
+			// Go up directory (only if not searching)
+			if m.search == "" && m.currentDir != m.rootDir {
 				m.currentDir = filepath.Dir(m.currentDir)
 				m.cursor = 0
 				m.search = ""
 				return m, m.loadItems
 			}
 		case "l", "enter":
-			// Open folder or note
-			if m.cursor < len(m.items) {
+			// Open folder or note (only if not searching)
+			if m.search == "" && m.cursor < len(m.items) {
 				item := m.items[m.cursor]
 				if item.IsFolder {
 					m.currentDir = item.Path
@@ -374,39 +431,75 @@ func (m SimpleModel) renderTree() string {
 }
 
 func (m SimpleModel) renderFullNote() string {
-	if m.renderer == nil || m.fullNote == nil {
+	if m.fullNote == nil {
 		return "Error: No note loaded"
 	}
 
-	rendered, err := m.renderer.Render(m.fullNote.Content)
-	if err != nil {
-		rendered = m.fullNote.Content
-	}
-
-	lines := strings.Split(rendered, "\n")
 	var s strings.Builder
 
-	maxLines := m.height - 4
-	start := m.lineCursor
-	if start > len(lines)-maxLines && len(lines) > maxLines {
-		start = len(lines) - maxLines
-	}
+	// Show raw content with cursor for navigation
+	maxLines := m.height - 5
+	start := m.lineCursor - maxLines/2
 	if start < 0 {
 		start = 0
 	}
-
-	end := start + maxLines
-	if end > len(lines) {
-		end = len(lines)
+	if start > len(m.contentLines)-maxLines {
+		start = max(0, len(m.contentLines)-maxLines)
 	}
 
+	end := start + maxLines
+	if end > len(m.contentLines) {
+		end = len(m.contentLines)
+	}
+
+	// Render lines with cursor and visual selection
 	for i := start; i < end; i++ {
-		s.WriteString(lines[i])
+		line := ""
+		if i < len(m.contentLines) {
+			line = m.contentLines[i]
+		}
+
+		// Visual mode highlighting
+		inVisual := m.visualMode && i >= min(m.visualStart, m.visualEnd) && i <= max(m.visualStart, m.visualEnd)
+		
+		// Show cursor on current line
+		if i == m.lineCursor {
+			if m.colCursor <= len(line) {
+				before := line[:m.colCursor]
+				cursor := "█"
+				after := ""
+				if m.colCursor < len(line) {
+					cursor = lipgloss.NewStyle().
+						Background(accentColor).
+						Foreground(lipgloss.Color("0")).
+						Render(string(line[m.colCursor]))
+					after = line[m.colCursor+1:]
+				}
+				line = before + cursor + after
+			}
+		}
+
+		if inVisual {
+			line = lipgloss.NewStyle().Background(lipgloss.Color("237")).Render(line)
+		}
+
+		s.WriteString(line)
 		s.WriteString("\n")
 	}
 
+	// Status bar
 	s.WriteString("\n")
-	help := HelpStyle.Render(fmt.Sprintf("j/k=scroll | e=edit | esc=back | Line %d/%d", m.lineCursor+1, len(lines)))
+	mode := ""
+	if m.visualMode {
+		mode = " [VISUAL]"
+	}
+	if m.showTree {
+		mode += " [TREE]"
+	}
+	status := fmt.Sprintf("Ln %d, Col %d%s | %s", m.lineCursor+1, m.colCursor+1, mode, m.fullNote.ID)
+	s.WriteString(HelpStyle.Render(status))
+	s.WriteString("\n")
+	help := HelpStyle.Render("hjkl=move | v=visual | y=copy | enter=follow link | t=tree | s/S=split | e=edit | esc=back")
 	s.WriteString(help)
 
 	return s.String()
