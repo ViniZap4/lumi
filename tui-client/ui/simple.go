@@ -171,6 +171,48 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Full view mode with cursor
 		if m.viewMode == ViewFullNote {
+			// Tree modal is open - handle tree navigation
+			if m.showTree {
+				switch msg.String() {
+				case "esc":
+					m.showTree = false
+					return m, nil
+				case "j", "down":
+					if m.cursor < len(m.items)-1 {
+						m.cursor++
+					}
+				case "k", "up":
+					if m.cursor > 0 {
+						m.cursor--
+					}
+				case "enter", "l":
+					// Open selected note
+					if m.cursor < len(m.items) {
+						item := m.items[m.cursor]
+						if !item.IsFolder && item.Note != nil {
+							m.fullNote = item.Note
+							m.contentLines = strings.Split(item.Note.Content, "\n")
+							m.lineCursor = 0
+							m.colCursor = 0
+							m.showTree = false
+						}
+					}
+				case "backspace":
+					if len(m.search) > 0 {
+						m.search = m.search[:len(m.search)-1]
+						return m, m.loadItems
+					}
+				default:
+					// Add to search
+					if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
+						m.search += msg.String()
+						return m, m.loadItems
+					}
+				}
+				return m, nil
+			}
+			
+			// Normal full view navigation
 			switch msg.String() {
 			case "q":
 				return m, tea.Quit
@@ -354,7 +396,12 @@ func (m SimpleModel) View() string {
 	case ViewHome:
 		return m.renderHome()
 	case ViewFullNote:
-		return m.renderFullNote()
+		base := m.renderFullNote()
+		// Overlay tree modal if active
+		if m.showTree {
+			return m.renderWithTreeModal(base)
+		}
+		return base
 	default:
 		return m.renderTreeYazi()
 	}
@@ -437,7 +484,48 @@ func (m SimpleModel) renderFullNote() string {
 
 	var s strings.Builder
 
-	// Show raw content with cursor for navigation
+	// Use glamour for beautiful rendering
+	if m.renderer != nil {
+		rendered, err := m.renderer.Render(m.fullNote.Content)
+		if err == nil {
+			lines := strings.Split(rendered, "\n")
+			
+			// Scrollable view
+			maxLines := m.height - 5
+			start := m.lineCursor - maxLines/2
+			if start < 0 {
+				start = 0
+			}
+			if start > len(lines)-maxLines {
+				start = max(0, len(lines)-maxLines)
+			}
+			end := min(start+maxLines, len(lines))
+			
+			for i := start; i < end; i++ {
+				s.WriteString(lines[i])
+				s.WriteString("\n")
+			}
+			
+			// Status
+			s.WriteString("\n")
+			mode := ""
+			if m.visualMode {
+				mode = " [VISUAL]"
+			}
+			if m.showTree {
+				mode += " [TREE]"
+			}
+			status := fmt.Sprintf("Line %d/%d%s | %s", m.lineCursor+1, len(lines), mode, m.fullNote.ID)
+			s.WriteString(HelpStyle.Render(status))
+			s.WriteString("\n")
+			help := HelpStyle.Render("j/k=scroll | t=tree | e=edit | esc=back")
+			s.WriteString(help)
+			
+			return s.String()
+		}
+	}
+
+	// Fallback: raw content with cursor
 	maxLines := m.height - 5
 	start := m.lineCursor - maxLines/2
 	if start < 0 {
@@ -446,37 +534,30 @@ func (m SimpleModel) renderFullNote() string {
 	if start > len(m.contentLines)-maxLines {
 		start = max(0, len(m.contentLines)-maxLines)
 	}
+	end := min(start+maxLines, len(m.contentLines))
 
-	end := start + maxLines
-	if end > len(m.contentLines) {
-		end = len(m.contentLines)
-	}
-
-	// Render lines with cursor and visual selection
 	for i := start; i < end; i++ {
 		line := ""
 		if i < len(m.contentLines) {
 			line = m.contentLines[i]
 		}
 
-		// Visual mode highlighting
+		// Visual mode
 		inVisual := m.visualMode && i >= min(m.visualStart, m.visualEnd) && i <= max(m.visualStart, m.visualEnd)
 		
-		// Show cursor on current line
-		if i == m.lineCursor {
-			if m.colCursor <= len(line) {
-				before := line[:m.colCursor]
-				cursor := "█"
-				after := ""
-				if m.colCursor < len(line) {
-					cursor = lipgloss.NewStyle().
-						Background(accentColor).
-						Foreground(lipgloss.Color("0")).
-						Render(string(line[m.colCursor]))
-					after = line[m.colCursor+1:]
-				}
-				line = before + cursor + after
+		// Cursor
+		if i == m.lineCursor && m.colCursor <= len(line) {
+			before := line[:m.colCursor]
+			cursor := "█"
+			after := ""
+			if m.colCursor < len(line) {
+				cursor = lipgloss.NewStyle().
+					Background(accentColor).
+					Foreground(lipgloss.Color("0")).
+					Render(string(line[m.colCursor]))
+				after = line[m.colCursor+1:]
 			}
+			line = before + cursor + after
 		}
 
 		if inVisual {
@@ -487,7 +568,7 @@ func (m SimpleModel) renderFullNote() string {
 		s.WriteString("\n")
 	}
 
-	// Status bar
+	// Status
 	s.WriteString("\n")
 	mode := ""
 	if m.visualMode {
@@ -499,10 +580,80 @@ func (m SimpleModel) renderFullNote() string {
 	status := fmt.Sprintf("Ln %d, Col %d%s | %s", m.lineCursor+1, m.colCursor+1, mode, m.fullNote.ID)
 	s.WriteString(HelpStyle.Render(status))
 	s.WriteString("\n")
-	help := HelpStyle.Render("hjkl=move | v=visual | y=copy | enter=follow link | t=tree | s/S=split | e=edit | esc=back")
+	help := HelpStyle.Render("hjkl=move | v=visual | enter=link | t=tree | e=edit | esc=back")
 	s.WriteString(help)
 
 	return s.String()
+}
+
+func (m SimpleModel) renderWithTreeModal(base string) string {
+	// Render tree as centered modal overlay
+	modalWidth := min(m.width-10, 80)
+	modalHeight := min(m.height-6, 30)
+	
+	var modal strings.Builder
+	modal.WriteString(lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Render("📂 Select Note"))
+	modal.WriteString("\n\n")
+	
+	// Search bar
+	if m.search != "" {
+		modal.WriteString(lipgloss.NewStyle().
+			Foreground(accentColor).
+			Render("🔍 " + m.search + "█"))
+		modal.WriteString("\n\n")
+	}
+	
+	// Items
+	maxItems := modalHeight - 8
+	for i, item := range m.items {
+		if i >= maxItems {
+			break
+		}
+		
+		icon := "📄"
+		if item.IsFolder {
+			icon = "📁"
+		}
+		line := icon + " " + item.Name
+		
+		if i == m.cursor {
+			line = lipgloss.NewStyle().
+				Foreground(accentColor).
+				Background(selectedBg).
+				Bold(true).
+				Render("▸ " + line)
+		} else {
+			line = "  " + line
+		}
+		
+		modal.WriteString(line)
+		modal.WriteString("\n")
+	}
+	
+	modal.WriteString("\n")
+	modal.WriteString(HelpStyle.Render("hjkl=move | enter=open | esc=close"))
+	
+	// Style modal
+	modalBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accentColor).
+		Padding(1, 2).
+		Width(modalWidth).
+		Render(modal.String())
+	
+	// Center on screen
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalBox,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
 }
 
 func (m SimpleModel) followLinkAtCursor() tea.Cmd {
