@@ -47,7 +47,8 @@ go build -o lumi
 - `n` - Create new note
 - `d` - Delete note
 - `g/G` - Jump to top/bottom
-- `v` - Toggle view (off → partial → full → full screen)
+- `v` - Toggle view (off → partial → full → off)
+- `V` - Toggle full screen view (distraction-free reading)
 - `t` - Open tree browser (in full screen view)
 - `L` - Show all links in current note
 - `q` - Quit
