@@ -354,11 +354,17 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.cursor < len(m.items) {
 						item := m.items[m.cursor]
 						if !item.IsFolder && item.Note != nil {
-							m.fullNote = item.Note
-							m.contentLines = strings.Split(item.Note.Content, "\n")
-							m.lineCursor = 0
-							m.colCursor = 0
-							m.showTree = false
+							// If split mode is active, open in split
+							if m.splitMode != "" {
+								m.splitNote = item.Note
+								m.showTree = false
+							} else {
+								m.fullNote = item.Note
+								m.contentLines = strings.Split(item.Note.Content, "\n")
+								m.lineCursor = 0
+								m.colCursor = 0
+								m.showTree = false
+							}
 						}
 					}
 				case "backspace":
@@ -429,11 +435,15 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchType = "filename"
 				return m, func() tea.Msg { return m.performSearch() }
 			case "s":
-				// Horizontal split
+				// Horizontal split - open tree to select note
 				m.splitMode = "horizontal"
+				m.showTree = true
+				return m, m.loadItems
 			case "S":
-				// Vertical split
+				// Vertical split - open tree to select note
 				m.splitMode = "vertical"
+				m.showTree = true
+				return m, m.loadItems
 			case "h":
 				if m.colCursor > 0 {
 					m.colCursor--
@@ -448,6 +458,7 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.lineCursor < len(m.contentLines)-1 {
 					m.lineCursor++
+					// Adjust colCursor if line is shorter
 					if m.lineCursor < len(m.contentLines) && m.colCursor > len(m.contentLines[m.lineCursor]) {
 						m.colCursor = len(m.contentLines[m.lineCursor])
 					}
@@ -461,6 +472,7 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.lineCursor > 0 {
 					m.lineCursor--
+					// Adjust colCursor if line is shorter
 					if m.colCursor > len(m.contentLines[m.lineCursor]) {
 						m.colCursor = len(m.contentLines[m.lineCursor])
 					}
