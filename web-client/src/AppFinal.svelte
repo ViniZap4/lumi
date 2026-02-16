@@ -12,6 +12,7 @@
   let title = '';
   let error = null;
   let saving = false;
+  let currentDir = '/';
   
   // Search modal
   let showSearch = false;
@@ -47,6 +48,10 @@
     });
     cursor = Math.min(cursor, Math.max(0, displayItems.length - 1));
   }
+
+  $: currentItem = displayItems[cursor];
+  $: previewNote = currentItem?.type === 'note' ? currentItem.data : null;
+
 
   function performSearch() {
     if (searchQuery === '') {
@@ -222,23 +227,48 @@
 
 <!-- Tree View -->
 {#if viewMode === 'tree'}
-  <div class="tree-view">
-    <div class="tree-header">
-      <h2>📂 Notes</h2>
+  <div class="tree-view-3col">
+    <!-- Parent Column -->
+    <div class="parent-col">
+      <div class="col-header">Parent</div>
+      <div class="col-content">
+        <div class="parent-item">📁 ~</div>
+      </div>
     </div>
-    <div class="tree-items">
-      {#each displayItems as item, i}
-        <div 
-          class="tree-item"
-          class:active={i === cursor}
-          on:click={() => { cursor = i; if (item.type === 'note') openNote(item); }}
-        >
-          <span class="icon">{item.type === 'folder' ? '📁' : '📄'}</span>
-          <span class="name">{item.name}</span>
-        </div>
-      {/each}
+
+    <!-- Center Column (Current) -->
+    <div class="center-col">
+      <div class="col-header">📂 {currentDir}</div>
+      <div class="col-content">
+        {#each displayItems as item, i}
+          <div 
+            class="tree-item"
+            class:active={i === cursor}
+            on:click={() => { cursor = i; if (item.type === 'note') openNote(item); }}
+          >
+            <span class="icon">{item.type === 'folder' ? '📁' : '📄'}</span>
+            <span class="name">{item.name}</span>
+          </div>
+        {/each}
+      </div>
+      <div class="col-help">hjkl=move | enter=open | /=search | esc=back</div>
     </div>
-    <div class="tree-help">hjkl=move | enter=open | /=search | esc=back</div>
+
+    <!-- Preview Column -->
+    <div class="preview-col">
+      <div class="col-header">Preview</div>
+      <div class="col-content">
+        {#if previewNote}
+          <div class="preview-title">{previewNote.title || previewNote.id}</div>
+          <div class="preview-divider"></div>
+          <div class="preview-text">
+            {@html renderMarkdown(previewNote.content?.split('\n').slice(0, 20).join('\n') || '')}
+          </div>
+        {:else}
+          <div class="no-preview">Select a note to preview</div>
+        {/if}
+      </div>
+    </div>
   </div>
 {/if}
 
@@ -278,6 +308,9 @@
         <input 
           type="text"
           bind:value={searchQuery}
+          on:input={() => performSearch()}
+          placeholder={`[${searchType === 'filename' ? 'Filename' : 'Content'}] Type to search...`}
+        />
           placeholder={`[${searchType === 'filename' ? 'Filename' : 'Content'}] Type to search...`}
           autofocus
         />
@@ -320,6 +353,13 @@
 {/if}
 
 <style>
+  :global(body), :global(html) {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
   * { 
     box-sizing: border-box; 
     margin: 0; 
@@ -343,6 +383,7 @@
     align-items: center;
     justify-content: center;
     height: 100vh;
+    width: 100vw;
     background: #000;
     color: #e5e5e5;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -376,34 +417,66 @@
     animation: slideUp 0.8s ease-out;
   }
 
-  /* Tree View */
-  .tree-view {
-    display: flex;
-    flex-direction: column;
+  /* Tree View - 3 Column */
+  .tree-view-3col {
+    display: grid;
+    grid-template-columns: 1fr 2fr 2fr;
     height: 100vh;
+    width: 100vw;
     background: #000;
     color: #e5e5e5;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     animation: fadeIn 0.4s ease-out;
   }
 
-  .tree-header {
-    padding: 2rem 2.5rem 1.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  .parent-col, .center-col, .preview-col {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
   }
 
-  .tree-header h2 {
-    font-size: 1.5rem;
+  .preview-col {
+    border-right: none;
+  }
+
+  .col-header {
+    padding: 1.5rem 1.5rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #a3a3a3;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .center-col .col-header {
     background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    font-weight: 700;
+    font-size: 1rem;
+    text-transform: none;
   }
 
-  .tree-items {
+  .col-content {
     flex: 1;
     overflow-y: auto;
-    padding: 1rem 2rem;
+    padding: 0.75rem;
+  }
+
+  .col-help {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 0.85rem;
+    color: #737373;
+    text-align: center;
+    font-family: 'SF Mono', monospace;
+  }
+
+  .parent-item {
+    padding: 0.75rem 1rem;
+    color: #a3a3a3;
+    font-size: 0.95rem;
   }
 
   .tree-item {
@@ -429,13 +502,36 @@
     transform: translateX(4px);
   }
 
-  .tree-help {
-    padding: 1.25rem 2.5rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    font-size: 0.85rem;
-    color: #737373;
+  .preview-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #fbbf24;
+    margin-bottom: 1rem;
+  }
+
+  .preview-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin-bottom: 1rem;
+  }
+
+  .preview-text {
+    color: #d4d4d4;
+    line-height: 1.7;
+    font-size: 0.95rem;
+  }
+
+  .preview-text :global(h1) { color: #fbbf24; font-size: 1.5em; margin: 1em 0 0.5em; font-weight: 700; }
+  .preview-text :global(h2) { color: #60a5fa; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
+  .preview-text :global(h3) { color: #34d399; font-size: 1.1em; margin: 1em 0 0.5em; font-weight: 600; }
+  .preview-text :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
+  .preview-text :global(.wiki-link) { color: #60a5fa; text-decoration: underline; }
+
+  .no-preview {
+    padding: 2rem;
     text-align: center;
-    font-family: 'SF Mono', monospace;
+    color: #737373;
+    font-style: italic;
   }
 
   /* Note View */
@@ -443,6 +539,7 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    width: 100vw;
     background: #000;
     color: #e5e5e5;
     animation: fadeIn 0.4s ease-out;
