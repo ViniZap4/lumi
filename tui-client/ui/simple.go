@@ -873,21 +873,10 @@ func (m SimpleModel) renderFullNote() string {
 
 	var s strings.Builder
 
-	// Render with glamour for beautiful display
-	rendered := m.fullNote.Content
-	if m.renderer != nil {
-		glamourRendered, err := m.renderer.Render(m.fullNote.Content)
-		if err == nil {
-			rendered = glamourRendered
-		}
-	}
-
-	// Split into lines for cursor navigation
-	lines := strings.Split(rendered, "\n")
-	
-	// Keep contentLines in sync for link detection
-	if len(m.contentLines) == 0 {
-		m.contentLines = strings.Split(m.fullNote.Content, "\n")
+	// Use raw content lines
+	lines := m.contentLines
+	if len(lines) == 0 {
+		lines = strings.Split(m.fullNote.Content, "\n")
 	}
 
 	// Scrollable view centered on cursor
@@ -908,40 +897,38 @@ func (m SimpleModel) renderFullNote() string {
 			line = lines[i]
 		}
 
+		// Apply simple markdown styling
+		styledLine := m.styleMarkdownLine(line)
+		
 		// Visual mode highlighting
 		inVisual := m.visualMode && i >= min(m.visualStart, m.visualEnd) && i <= max(m.visualStart, m.visualEnd)
 		
 		// Show cursor on current line
 		if i == m.lineCursor {
-			// Find cursor position in rendered line (approximate)
-			cursorPos := m.colCursor
-			if cursorPos > len(line) {
-				cursorPos = len(line)
-			}
+			// Add cursor indicator
+			prefix := lipgloss.NewStyle().
+				Foreground(accentColor).
+				Bold(true).
+				Render("▸ ")
 			
-			if cursorPos <= len(line) {
-				before := ""
-				if cursorPos > 0 {
-					before = line[:cursorPos]
-				}
-				cursor := "█"
-				after := ""
-				if cursorPos < len(line) {
-					cursor = lipgloss.NewStyle().
-						Background(accentColor).
-						Foreground(lipgloss.Color("0")).
-						Render(string(line[cursorPos]))
-					after = line[cursorPos+1:]
-				}
-				line = before + cursor + after
+			if inVisual {
+				styledLine = prefix + lipgloss.NewStyle().
+					Background(lipgloss.Color("237")).
+					Render(styledLine)
+			} else {
+				styledLine = prefix + styledLine
+			}
+		} else {
+			if inVisual {
+				styledLine = "  " + lipgloss.NewStyle().
+					Background(lipgloss.Color("237")).
+					Render(styledLine)
+			} else {
+				styledLine = "  " + styledLine
 			}
 		}
 
-		if inVisual {
-			line = lipgloss.NewStyle().Background(lipgloss.Color("237")).Render(line)
-		}
-
-		s.WriteString(line)
+		s.WriteString(styledLine)
 		s.WriteString("\n")
 	}
 
@@ -961,6 +948,53 @@ func (m SimpleModel) renderFullNote() string {
 	s.WriteString(help)
 
 	return s.String()
+}
+
+// Simple markdown styling
+func (m SimpleModel) styleMarkdownLine(line string) string {
+	// Headers
+	if strings.HasPrefix(line, "# ") {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("226")).
+			Bold(true).
+			Render(line)
+	}
+	if strings.HasPrefix(line, "## ") {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("81")).
+			Bold(true).
+			Render(line)
+	}
+	if strings.HasPrefix(line, "### ") {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("120")).
+			Bold(true).
+			Render(line)
+	}
+	
+	// Code blocks
+	if strings.HasPrefix(line, "```") {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render(line)
+	}
+	
+	// Lists
+	if strings.HasPrefix(strings.TrimSpace(line), "- ") || strings.HasPrefix(strings.TrimSpace(line), "* ") {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("147")).
+			Render(line)
+	}
+	
+	// Links [[wiki-links]]
+	if strings.Contains(line, "[[") && strings.Contains(line, "]]") {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("75")).
+			Underline(true).
+			Render(line)
+	}
+	
+	return line
 }
 
 func (m SimpleModel) renderWithTreeModal(base string) string {
