@@ -196,6 +196,82 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// Home view
 		if m.viewMode == ViewHome {
+			// Handle search modal if open
+			if m.showSearch {
+				switch msg.String() {
+				case "esc":
+					m.showSearch = false
+					m.searchQuery = ""
+					m.cursor = 0
+					return m, nil
+				case "ctrl+f":
+					if m.searchType == "filename" {
+						m.searchType = "content"
+					} else {
+						m.searchType = "filename"
+					}
+					return m, func() tea.Msg { return m.performSearch() }
+				case "j", "down":
+					if m.cursor < len(m.searchResults)-1 {
+						m.cursor++
+					}
+					return m, nil
+				case "k", "up":
+					if m.cursor > 0 {
+						m.cursor--
+					}
+					return m, nil
+				case "h", "l":
+					return m, nil
+				case "enter":
+					if m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
+						m.viewMode = ViewFullNote
+						m.fullNote = m.searchResults[m.cursor].Note
+						m.contentLines = strings.Split(m.fullNote.Content, "\n")
+						m.lineCursor = 0
+						m.colCursor = 0
+						m.showSearch = false
+						m.cursor = 0
+					}
+					return m, nil
+				case "s":
+					if m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
+						m.viewMode = ViewFullNote
+						m.fullNote = m.searchResults[m.cursor].Note
+						m.contentLines = strings.Split(m.fullNote.Content, "\n")
+						m.splitMode = "horizontal"
+						m.splitNote = m.searchResults[m.cursor].Note
+						m.showSearch = false
+						m.cursor = 0
+					}
+					return m, nil
+				case "S":
+					if m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
+						m.viewMode = ViewFullNote
+						m.fullNote = m.searchResults[m.cursor].Note
+						m.contentLines = strings.Split(m.fullNote.Content, "\n")
+						m.splitMode = "vertical"
+						m.splitNote = m.searchResults[m.cursor].Note
+						m.showSearch = false
+						m.cursor = 0
+					}
+					return m, nil
+				case "backspace":
+					if len(m.searchQuery) > 0 {
+						m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+						return m, func() tea.Msg { return m.performSearch() }
+					}
+					return m, nil
+				default:
+					if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
+						m.searchQuery += msg.String()
+						return m, func() tea.Msg { return m.performSearch() }
+					}
+				}
+				return m, nil
+			}
+			
+			// Normal home view keys
 			switch msg.String() {
 			case "q", "ctrl+c":
 				return m, tea.Quit
