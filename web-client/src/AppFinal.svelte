@@ -131,13 +131,13 @@
         showSearch = false;
         searchQuery = '';
         searchCursor = 0;
-      } else if (e.key === 'j' || e.key === 'ArrowDown') {
+      } else if ((e.key === 'j' || e.key === 'ArrowDown') && e.ctrlKey) {
         e.preventDefault();
         if (searchCursor < searchResults.length - 1) searchCursor++;
-      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+      } else if ((e.key === 'k' || e.key === 'ArrowUp') && e.ctrlKey) {
         e.preventDefault();
         if (searchCursor > 0) searchCursor--;
-      } else if (e.key === 'Enter') {
+      } else if (e.key === 'Enter' && !e.target.matches('input')) {
         e.preventDefault();
         if (searchResults[searchCursor]) {
           openNote(searchResults[searchCursor]);
@@ -274,27 +274,36 @@
 
 <!-- Note View -->
 {#if viewMode === 'note' && selectedNote}
-  <div class="note-view">
-    <div class="note-header">
-      <input 
-        bind:value={title} 
-        placeholder="Title"
-        class="note-title"
-      />
-      <div class="note-actions">
-        <button on:click={save} disabled={saving}>
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-        <button on:click={() => viewMode = 'tree'}>Back (esc)</button>
+  <div class="note-view-split">
+    <div class="note-editor">
+      <div class="note-header">
+        <input 
+          bind:value={title} 
+          placeholder="Title"
+          class="note-title"
+        />
+        <div class="note-actions">
+          <button on:click={save} disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          <button on:click={() => viewMode = 'tree'}>Back (esc)</button>
+        </div>
+      </div>
+      <div class="note-content">
+        <textarea 
+          bind:value={content}
+          placeholder="Write your note..."
+        ></textarea>
+      </div>
+      <div class="note-help">/=search | ctrl+s=save | esc=back</div>
+    </div>
+    
+    <div class="note-preview">
+      <div class="preview-header-note">Live Preview</div>
+      <div class="preview-content-note">
+        {@html renderMarkdown(content || '')}
       </div>
     </div>
-    <div class="note-content">
-      <textarea 
-        bind:value={content}
-        placeholder="Write your note..."
-      ></textarea>
-    </div>
-    <div class="note-help">/=search | e=edit | esc=back</div>
   </div>
 {/if}
 
@@ -345,7 +354,7 @@
         </div>
       </div>
 
-      <div class="modal-help">ctrl+f=toggle | enter=open | s=split-h | S=split-v | esc=close</div>
+      <div class="modal-help">ctrl+j/k=navigate | enter=open | esc=close</div>
     </div>
   </div>
 {/if}
@@ -532,16 +541,53 @@
     font-style: italic;
   }
 
-  /* Note View */
-  .note-view {
-    display: flex;
-    flex-direction: column;
+  /* Note View - Split */
+  .note-view-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     height: 100vh;
     width: 100vw;
     background: #000;
     color: #e5e5e5;
     animation: fadeIn 0.4s ease-out;
   }
+
+  .note-editor {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .note-preview {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .preview-header-note {
+    padding: 2rem 2.5rem 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-weight: 600;
+    color: #a3a3a3;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .preview-content-note {
+    flex: 1;
+    padding: 2.5rem;
+    overflow-y: auto;
+    font-size: 1rem;
+    line-height: 1.8;
+    color: #d4d4d4;
+  }
+
+  .preview-content-note :global(h1) { color: #fbbf24; font-size: 2em; margin: 1em 0 0.5em; font-weight: 700; }
+  .preview-content-note :global(h2) { color: #60a5fa; font-size: 1.5em; margin: 1em 0 0.5em; font-weight: 600; }
+  .preview-content-note :global(h3) { color: #34d399; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
+  .preview-content-note :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
+  .preview-content-note :global(.wiki-link) { color: #60a5fa; text-decoration: underline; }
 
   .note-header {
     display: flex;
