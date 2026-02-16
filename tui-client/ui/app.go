@@ -72,9 +72,9 @@ func NewModel(rootDir string) Model {
 		folders:     []folderItem{},
 		notes:       []noteItem{},
 		focus:       focusFolders,
-		mode:        modeNormal,
+		mode:        modeTree,
 		previewMode: PreviewOff,
-		showHome:    true,
+		showHome:    false,
 	}
 }
 
@@ -803,27 +803,9 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	// Show home view
-	if m.showHome {
-		homeView := m.renderHome()
-		
-		// Help bar
-		helpKeys := []string{
-			HelpKeyStyle.Render("t") + "=tree",
-			HelpKeyStyle.Render("n") + "=new",
-			HelpKeyStyle.Render("q") + "=quit",
-		}
-		help := HelpStyle.Render(strings.Join(helpKeys, " | "))
-		
-		view := lipgloss.JoinVertical(lipgloss.Left, homeView, help)
-		
-		// Show tree modal if active
-		if m.mode == modeTree {
-			modal := m.renderTreeModal()
-			view = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal, lipgloss.WithWhitespaceChars(" "))
-		}
-		
-		return view
+	// Always show tree modal (main navigation)
+	if m.mode == modeTree {
+		return m.renderTreeModal()
 	}
 
 	// Full view mode - single panel

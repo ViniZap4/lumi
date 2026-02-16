@@ -10,8 +10,9 @@ import (
 )
 
 func (m Model) renderTreeModal() string {
-	modalWidth := min(m.width-4, 140)
-	modalHeight := min(m.height-2, 40)
+	// Full screen tree view (not a modal)
+	modalWidth := m.width
+	modalHeight := m.height
 
 	// Three columns: parent, current, preview
 	leftWidth := modalWidth / 4
@@ -26,9 +27,9 @@ func (m Model) renderTreeModal() string {
 	content.WriteString("\n")
 
 	// Three columns
-	leftCol := m.renderParentColumn(leftWidth, modalHeight-6)
-	centerCol := m.renderCurrentColumn(centerWidth, modalHeight-6)
-	rightCol := m.renderPreviewColumn(rightWidth, modalHeight-6)
+	leftCol := m.renderParentColumn(leftWidth, modalHeight-4)
+	centerCol := m.renderCurrentColumn(centerWidth, modalHeight-4)
+	rightCol := m.renderPreviewColumn(rightWidth, modalHeight-4)
 
 	columns := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -46,20 +47,12 @@ func (m Model) renderTreeModal() string {
 		HelpKeyStyle.Render("hjkl") + "=navigate",
 		HelpKeyStyle.Render("enter") + "=open",
 		HelpKeyStyle.Render("/") + "=search",
-		HelpKeyStyle.Render("esc") + "=close",
+		HelpKeyStyle.Render("q") + "=quit",
 	}
 	helpText := HelpStyle.Render(strings.Join(helpKeys, " | "))
 	content.WriteString(helpText)
 
-	modal := lipgloss.NewStyle().
-		Width(modalWidth).
-		Height(modalHeight).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(primaryColor).
-		Padding(1, 1).
-		Render(content.String())
-
-	return modal
+	return content.String()
 }
 
 func (m Model) renderTreeTitle(width int) string {

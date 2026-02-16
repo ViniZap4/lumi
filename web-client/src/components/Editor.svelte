@@ -8,6 +8,7 @@
   let content = '';
   let title = '';
   let saving = false;
+  let error = null;
 
   $: if (noteId) {
     loadNote(noteId);
@@ -15,11 +16,13 @@
 
   async function loadNote(id) {
     try {
+      error = null;
       note = await getNote(id);
-      title = note.title;
-      content = note.content;
+      title = note.title || '';
+      content = note.content || '';
     } catch (err) {
       console.error('Failed to load note:', err);
+      error = err.message;
     }
   }
 
@@ -27,10 +30,12 @@
     if (!note) return;
     
     saving = true;
+    error = null;
     try {
-      await updateNote(note.id, { title, content, tags: note.tags });
+      await updateNote(note.id, { title, content, tags: note.tags || [] });
     } catch (err) {
       console.error('Failed to save note:', err);
+      error = err.message;
     } finally {
       saving = false;
     }
@@ -47,6 +52,9 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <div class="editor">
+  {#if error}
+    <div class="error">Error: {error}</div>
+  {/if}
   {#if note}
     <div class="header">
       <input 
@@ -134,5 +142,13 @@
     justify-content: center;
     color: #666;
     font-style: italic;
+  }
+
+  .error {
+    padding: 1rem;
+    background: #ff4444;
+    color: white;
+    border-radius: 4px;
+    margin-bottom: 1rem;
   }
 </style>
