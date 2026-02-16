@@ -273,16 +273,16 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			
 			// Normal home view keys
 			switch msg.String() {
-			case "q", "ctrl+c":
+			case "ctrl+q":
 				return m, tea.Quit
-			case "/":
+			case "ctrl+f":
 				// Open search modal from home
 				m.showSearch = true
 				m.searchQuery = ""
 				m.searchType = "filename"
 				m.inFileSearch = false
 				return m, func() tea.Msg { return m.performSearch() }
-			case "c":
+			case "ctrl+c":
 				// Edit config - create if doesn't exist
 				configDir := filepath.Join(os.Getenv("HOME"), ".config", "lumi")
 				configPath := filepath.Join(configDir, "config.yaml")
@@ -305,7 +305,7 @@ theme: dark
 					editorCmd = "nvim"
 				}
 				return m, tea.ExecProcess(exec.Command(editorCmd, configPath), nil)
-			case "enter", "t":
+			case "ctrl+t", "enter":
 				m.viewMode = ViewTree
 				return m, m.loadItems
 			}
@@ -1141,10 +1141,10 @@ func (m SimpleModel) renderHome() string {
 		Width(m.width).
 		Align(lipgloss.Center).
 		Render(
-			"/      Search notes\n" +
-			"enter  Browse tree\n" +
-			"c      Edit config\n" +
-			"q      Quit",
+			"ctrl+f  Search notes\n" +
+			"ctrl+t  Browse tree\n" +
+			"ctrl+c  Edit config\n" +
+			"ctrl+q  Quit",
 		)
 	
 	s.WriteString(keysContent)
@@ -1377,8 +1377,24 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 	modal.WriteString(inputBox)
 	modal.WriteString("\n\n")
 	
-	// Results section
-	if len(m.searchResults) == 0 {
+	// Results section or help
+	if m.searchQuery == "" {
+		// Show help when empty
+		helpText := lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Width(modalWidth - 8).
+			Align(lipgloss.Center).
+			Render(
+				"Type to search notes\n\n" +
+				"ctrl+f  Toggle filename/content\n" +
+				"enter   Open note\n" +
+				"s       Open in horizontal split\n" +
+				"S       Open in vertical split\n" +
+				"esc     Close",
+			)
+		modal.WriteString(helpText)
+		modal.WriteString("\n")
+	} else if len(m.searchResults) == 0 {
 		modal.WriteString(lipgloss.NewStyle().
 			Foreground(mutedColor).
 			Italic(true).
