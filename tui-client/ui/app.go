@@ -41,8 +41,10 @@ type Model struct {
 	noteCursor     int
 	previewScroll  int
 	linkCursor     int
-	treeFocus      int // 0=folders, 1=notes in tree modal
-	contentCursor  int // Cursor position in full view content
+	treeCursor     int // Cursor in tree view (combined folders + notes)
+	treeItems      []treeItem
+	contentCursor  int // Line cursor in full view
+	cursorCol      int // Column position in line
 	contentLines   []string
 	focus          focusPanel
 	mode           inputMode
@@ -52,6 +54,13 @@ type Model struct {
 	height         int
 	err            error
 	links          []string
+}
+
+type treeItem struct {
+	name     string
+	isFolder bool
+	path     string
+	note     *domain.Note
 }
 
 func NewModel(rootDir string) Model {
@@ -180,44 +189,57 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeTree {
 			switch msg.String() {
 			case "h":
-				m.treeFocus = 0
+				// Go up directory
+				if m.currentDir != m.rootDir {
+					m.currentDir = filepath.Dir(m.currentDir)
+					m.treeCursor = 0
+					return m, tea.Batch(m.loadFolders, m.loadNotes, m.updateTreeItems())
+				}
 				return m, nil
 			case "l":
-				m.treeFocus = 1
+				// Enter folder if on folder item
+				if m.treeCursor < len(m.treeItems) && m.treeItems[m.treeCursor].isFolder {
+					m.currentDir = m.treeItems[m.treeCursor].path
+					m.treeCursor = 0
+					return m, tea.Batch(m.loadFolders, m.loadNotes, m.updateTreeItems())
+				}
 				return m, nil
 			case "j":
-				if m.treeFocus == 0 {
-					if m.folderCursor < len(m.folders)-1 {
-						m.folderCursor++
-					}
-				} else {
-					if m.noteCursor < len(m.notes)-1 {
-						m.noteCursor++
-					}
+				if m.treeCursor < len(m.treeItems)-1 {
+					m.treeCursor++
 				}
 				return m, nil
 			case "k":
-				if m.treeFocus == 0 {
-					if m.folderCursor > 0 {
-						m.folderCursor--
-					}
-				} else {
-					if m.noteCursor > 0 {
-						m.noteCursor--
-					}
+				if m.treeCursor > 0 {
+					m.treeCursor--
 				}
 				return m, nil
 			case "enter":
-				if m.treeFocus == 0 {
-					m.mode = modeNormal
-					return m.enterFolder()
-				} else {
-					m.mode = modeNormal
-					m.previewMode = ViewFull
-					m.focus = focusPreview
-					m.previewScroll = 0
-					return m, nil
+				if m.treeCursor < len(m.treeItems) {
+					item := m.treeItems[m.treeCursor]
+					if item.isFolder {
+						m.currentDir = item.path
+						m.treeCursor = 0
+						return m, tea.Batch(m.loadFolders, m.loadNotes, m.updateTreeItems())
+					} else {
+						// Select note
+						for i, n := range m.notes {
+							if n.note.ID == item.note.ID {
+								m.noteCursor = i
+								break
+							}
+						}
+						m.mode = modeNormal
+						m.previewMode = ViewFull
+						m.focus = focusPreview
+						m.previewScroll = 0
+						m.contentCursor = 0
+						m.cursorCol = 0
+						m.updateContentLines()
+						return m, nil
+					}
 				}
+				return m, nil
 			case "esc", "q":
 				m.mode = modeNormal
 				return m, nil
@@ -232,7 +254,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "h":
 			// Vim motion: move left (folders or up directory)
 			if m.previewMode == ViewFull {
-				// In full view, h does nothing (or could go back)
+				// Move cursor left in line
+				if m.cursorCol > 0 {
+					m.cursorCol--
+				}
 				return m, nil
 			}
 			if m.focus == focusNotes {
@@ -246,7 +271,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "l":
 			// Vim motion: move right (notes or preview or enter folder)
 			if m.previewMode == ViewFull {
-				// In full view, l does nothing
+				// Move cursor right in line
+				if m.contentCursor < len(m.contentLines) {
+					lineLen := len(m.contentLines[m.contentCursor])
+					if m.cursorCol < lineLen {
+						m.cursorCol++
+					}
+				}
 				return m, nil
 			}
 			if m.focus == focusFolders {
@@ -266,6 +297,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Move cursor down in full view
 				if m.contentCursor < len(m.contentLines)-1 {
 					m.contentCursor++
+					// Clamp cursor column to new line length
+					if m.contentCursor < len(m.contentLines) {
+						lineLen := len(m.contentLines[m.contentCursor])
+						if m.cursorCol > lineLen {
+							m.cursorCol = lineLen
+						}
+					}
 					// Auto-scroll if needed
 					if m.contentCursor > m.previewScroll+m.height-10 {
 						m.previewScroll++
@@ -279,6 +317,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Move cursor up in full view
 				if m.contentCursor > 0 {
 					m.contentCursor--
+					// Clamp cursor column to new line length
+					if m.contentCursor < len(m.contentLines) {
+						lineLen := len(m.contentLines[m.contentCursor])
+						if m.cursorCol > lineLen {
+							m.cursorCol = lineLen
+						}
+					}
 					// Auto-scroll if needed
 					if m.contentCursor < m.previewScroll {
 						m.previewScroll--
@@ -290,6 +335,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "g":
 			if m.previewMode == ViewFull {
 				m.contentCursor = 0
+				m.cursorCol = 0
 				m.previewScroll = 0
 				return m, nil
 			}
@@ -297,10 +343,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "G":
 			if m.previewMode == ViewFull {
 				m.contentCursor = max(0, len(m.contentLines)-1)
+				m.cursorCol = 0
 				m.previewScroll = max(0, len(m.contentLines)-m.height+10)
 				return m, nil
 			}
 			return m.handleBottom()
+		case "0":
+			// Go to start of line
+			if m.previewMode == ViewFull {
+				m.cursorCol = 0
+				return m, nil
+			}
+		case "$":
+			// Go to end of line
+			if m.previewMode == ViewFull {
+				if m.contentCursor < len(m.contentLines) {
+					m.cursorCol = len(m.contentLines[m.contentCursor])
+				}
+				return m, nil
+			}
+		case "w":
+			// Move word forward
+			if m.previewMode == ViewFull {
+				return m.moveWordForward()
+			}
+		case "b":
+			// Move word backward
+			if m.previewMode == ViewFull {
+				return m.moveWordBackward()
+			}
 		case "v":
 			// Toggle preview mode
 			switch m.previewMode {
@@ -325,12 +396,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.previewScroll = 0
 			m.contentCursor = 0
+			m.cursorCol = 0
 			return m, nil
 		case "t":
 			// Open tree modal (only in full view)
 			if m.previewMode == ViewFull {
 				m.mode = modeTree
-				m.treeFocus = 1 // Start on notes
+				m.treeCursor = 0
+				return m, m.updateTreeItems()
 			}
 			return m, nil
 		case "enter":
@@ -383,6 +456,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorFinishedMsg:
 		return m, tea.Batch(m.loadNotes, m.loadFolders)
+
+	case treeItemsLoadedMsg:
+		m.treeItems = msg.items
+		return m, nil
 
 	case errMsg:
 		m.err = msg.err
@@ -595,6 +672,99 @@ func (m *Model) updateContentLines() {
 	m.contentLines = strings.Split(note.Content, "\n")
 }
 
+func (m Model) updateTreeItems() tea.Cmd {
+	return func() tea.Msg {
+		var items []treeItem
+		
+		// Add folders first
+		for _, f := range m.folders {
+			items = append(items, treeItem{
+				name:     f.folder.Name,
+				isFolder: true,
+				path:     f.folder.Path,
+			})
+		}
+		
+		// Add notes
+		for _, n := range m.notes {
+			items = append(items, treeItem{
+				name:     n.note.Title,
+				isFolder: false,
+				path:     n.note.Path,
+				note:     n.note,
+			})
+		}
+		
+		return treeItemsLoadedMsg{items}
+	}
+}
+
+type treeItemsLoadedMsg struct {
+	items []treeItem
+}
+
+func (m Model) moveWordForward() (tea.Model, tea.Cmd) {
+	if m.contentCursor >= len(m.contentLines) {
+		return m, nil
+	}
+	
+	line := m.contentLines[m.contentCursor]
+	if m.cursorCol >= len(line) {
+		// Move to next line
+		if m.contentCursor < len(m.contentLines)-1 {
+			m.contentCursor++
+			m.cursorCol = 0
+			if m.contentCursor > m.previewScroll+m.height-10 {
+				m.previewScroll++
+			}
+		}
+		return m, nil
+	}
+	
+	// Skip current word
+	for m.cursorCol < len(line) && line[m.cursorCol] != ' ' {
+		m.cursorCol++
+	}
+	// Skip spaces
+	for m.cursorCol < len(line) && line[m.cursorCol] == ' ' {
+		m.cursorCol++
+	}
+	
+	return m, nil
+}
+
+func (m Model) moveWordBackward() (tea.Model, tea.Cmd) {
+	if m.contentCursor >= len(m.contentLines) {
+		return m, nil
+	}
+	
+	if m.cursorCol == 0 {
+		// Move to previous line
+		if m.contentCursor > 0 {
+			m.contentCursor--
+			m.cursorCol = len(m.contentLines[m.contentCursor])
+			if m.contentCursor < m.previewScroll {
+				m.previewScroll--
+			}
+		}
+		return m, nil
+	}
+	
+	line := m.contentLines[m.contentCursor]
+	m.cursorCol--
+	
+	// Skip spaces
+	for m.cursorCol > 0 && line[m.cursorCol] == ' ' {
+		m.cursorCol--
+	}
+	// Skip word
+	for m.cursorCol > 0 && line[m.cursorCol-1] != ' ' {
+		m.cursorCol--
+	}
+	
+	return m, nil
+}
+
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Loading..."
@@ -611,13 +781,12 @@ func (m Model) View() string {
 		
 		// Help bar for full view
 		helpKeys := []string{
-			HelpKeyStyle.Render("q") + "=quit",
-			HelpKeyStyle.Render("j/k") + "=move cursor",
-			HelpKeyStyle.Render("g/G") + "=top/bottom",
+			HelpKeyStyle.Render("hjkl") + "=move",
+			HelpKeyStyle.Render("w/b") + "=word",
+			HelpKeyStyle.Render("0/$") + "=line",
 			HelpKeyStyle.Render("e") + "=edit",
 			HelpKeyStyle.Render("t") + "=tree",
-			HelpKeyStyle.Render("V") + "=exit full",
-			HelpKeyStyle.Render("L") + "=links",
+			HelpKeyStyle.Render("V") + "=exit",
 		}
 		help := HelpStyle.Render(strings.Join(helpKeys, " | "))
 
@@ -943,15 +1112,28 @@ func (m Model) renderFullView(note *domain.Note) string {
 	if start < len(m.contentLines) {
 		for i := start; i < end; i++ {
 			line := m.contentLines[i]
-			line = highlightLinks(line)
 			
 			// Show cursor on current line
 			if i == m.contentCursor {
-				cursorStyle := lipgloss.NewStyle().
-					Background(selectedBg).
-					Foreground(accentColor)
-				line = cursorStyle.Render("▸ ") + line
+				// Insert cursor at position
+				if m.cursorCol <= len(line) {
+					before := line[:m.cursorCol]
+					after := ""
+					cursor := "█"
+					if m.cursorCol < len(line) {
+						cursor = lipgloss.NewStyle().
+							Background(accentColor).
+							Foreground(lipgloss.Color("0")).
+							Render(string(line[m.cursorCol]))
+						after = line[m.cursorCol+1:]
+					}
+					line = before + cursor + after
+				}
+				
+				line = highlightLinks(line)
+				line = "  " + line
 			} else {
+				line = highlightLinks(line)
 				line = "  " + line
 			}
 			
@@ -959,7 +1141,7 @@ func (m Model) renderFullView(note *domain.Note) string {
 		}
 
 		// Scroll indicator
-		scrollInfo := fmt.Sprintf("Line %d/%d", m.contentCursor+1, len(m.contentLines))
+		scrollInfo := fmt.Sprintf("Ln %d, Col %d", m.contentCursor+1, m.cursorCol+1)
 		if end < len(m.contentLines) {
 			scrollInfo += " (more below)"
 		}
@@ -975,151 +1157,72 @@ func (m Model) renderFullView(note *domain.Note) string {
 }
 
 func (m Model) renderTreeModal() string {
-	modalWidth := min(100, m.width-8)
-	modalHeight := min(35, m.height-6)
+	modalWidth := min(70, m.width-10)
+	modalHeight := min(m.height-4, 30)
 
 	var content strings.Builder
 	
-	// Title
-	titleText := "📂 " + m.currentDir
+	// Title with current path
+	pathParts := strings.Split(strings.TrimPrefix(m.currentDir, m.rootDir), string(filepath.Separator))
+	pathDisplay := "~"
+	if len(pathParts) > 0 && pathParts[0] != "" {
+		pathDisplay = pathDisplay + "/" + strings.Join(pathParts, "/")
+	}
+	
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(primaryColor).
-		Width(modalWidth-4).
-		Align(lipgloss.Center).
-		MarginBottom(1)
-	content.WriteString(titleStyle.Render(titleText))
-	content.WriteString("\n")
+		Width(modalWidth-4)
+	content.WriteString(titleStyle.Render("📂 " + pathDisplay))
+	content.WriteString("\n\n")
 
-	// Split into two columns
-	leftWidth := (modalWidth - 6) / 2
-	rightWidth := modalWidth - 6 - leftWidth
+	// Tree items
+	maxItems := modalHeight - 6
+	start := max(0, m.treeCursor-maxItems+3)
+	end := min(len(m.treeItems), start+maxItems)
 
-	// Folders column
-	var foldersContent strings.Builder
-	folderTitle := "📁 Folders"
-	if m.treeFocus == 0 {
-		foldersContent.WriteString(lipgloss.NewStyle().
-			Bold(true).
-			Foreground(accentColor).
-			Background(selectedBg).
-			Padding(0, 1).
-			Width(leftWidth).
-			Render(folderTitle))
-	} else {
-		foldersContent.WriteString(lipgloss.NewStyle().
-			Foreground(mutedColor).
-			Padding(0, 1).
-			Width(leftWidth).
-			Render(folderTitle))
-	}
-	foldersContent.WriteString("\n\n")
-
-	if len(m.folders) == 0 {
-		foldersContent.WriteString(DimItemStyle.Render("  No folders"))
-	} else {
-		maxItems := modalHeight - 8
-		for i := 0; i < min(len(m.folders), maxItems); i++ {
-			folder := m.folders[i].folder
-			line := folder.Name
-			if i == m.folderCursor && m.treeFocus == 0 {
-				line = lipgloss.NewStyle().
-					Foreground(accentColor).
-					Background(selectedBg).
-					Bold(true).
-					Render("▸ " + line)
-			} else {
-				line = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("252")).
-					Render("  " + line)
-			}
-			foldersContent.WriteString(line + "\n")
+	for i := start; i < end; i++ {
+		item := m.treeItems[i]
+		
+		var icon string
+		var line string
+		if item.isFolder {
+			icon = "📁"
+			line = icon + " " + item.name + "/"
+		} else {
+			icon = "📄"
+			line = icon + " " + item.name
 		}
-	}
-
-	// Notes column
-	var notesContent strings.Builder
-	notesTitle := "📝 Notes"
-	if m.treeFocus == 1 {
-		notesContent.WriteString(lipgloss.NewStyle().
-			Bold(true).
-			Foreground(accentColor).
-			Background(selectedBg).
-			Padding(0, 1).
-			Width(rightWidth).
-			Render(notesTitle))
-	} else {
-		notesContent.WriteString(lipgloss.NewStyle().
-			Foreground(mutedColor).
-			Padding(0, 1).
-			Width(rightWidth).
-			Render(notesTitle))
-	}
-	notesContent.WriteString("\n\n")
-
-	if len(m.notes) == 0 {
-		notesContent.WriteString(DimItemStyle.Render("  No notes"))
-	} else {
-		maxItems := modalHeight - 8
-		for i := 0; i < min(len(m.notes), maxItems); i++ {
-			note := m.notes[i].note
-			line := note.Title
-			if i == m.noteCursor && m.treeFocus == 1 {
-				line = lipgloss.NewStyle().
-					Foreground(accentColor).
-					Background(selectedBg).
-					Bold(true).
-					Render("▸ " + line)
-			} else {
-				line = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("252")).
-					Render("  " + line)
-			}
-			notesContent.WriteString(line + "\n")
+		
+		if i == m.treeCursor {
+			line = lipgloss.NewStyle().
+				Foreground(accentColor).
+				Bold(true).
+				Render("▸ " + line)
+		} else {
+			line = "  " + line
 		}
+		
+		content.WriteString(line + "\n")
 	}
 
-	// Combine columns with separator
-	foldersPanel := lipgloss.NewStyle().
-		Width(leftWidth).
-		Height(modalHeight - 6).
-		Padding(0, 1).
-		Render(foldersContent.String())
-	
-	separator := lipgloss.NewStyle().
-		Foreground(mutedColor).
-		Height(modalHeight - 6).
-		Render("│")
-	
-	notesPanel := lipgloss.NewStyle().
-		Width(rightWidth).
-		Height(modalHeight - 6).
-		Padding(0, 1).
-		Render(notesContent.String())
-	
-	content.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, foldersPanel, separator, notesPanel))
-
-	// Help
+	// Help at bottom
 	content.WriteString("\n")
 	helpKeys := []string{
-		HelpKeyStyle.Render("h/l") + "=switch",
 		HelpKeyStyle.Render("j/k") + "=move",
-		HelpKeyStyle.Render("enter") + "=select",
+		HelpKeyStyle.Render("h") + "=up dir",
+		HelpKeyStyle.Render("l/enter") + "=open",
 		HelpKeyStyle.Render("esc") + "=close",
 	}
 	helpText := HelpStyle.Render(strings.Join(helpKeys, " | "))
-	helpStyle := lipgloss.NewStyle().
-		Width(modalWidth - 4).
-		Align(lipgloss.Center)
-	content.WriteString(helpStyle.Render(helpText))
+	content.WriteString(helpText)
 
 	modal := lipgloss.NewStyle().
 		Width(modalWidth).
 		Height(modalHeight).
-		Border(lipgloss.ThickBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderForeground(primaryColor).
 		Padding(1, 2).
-		Background(lipgloss.Color("234")).
 		Render(content.String())
 
 	return modal

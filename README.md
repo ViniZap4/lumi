@@ -40,18 +40,23 @@ go build -o lumi
 ```
 
 **Keybindings:**
-- `h/l` - Navigate left/right (folders ↔ notes ↔ preview)
-- `j/k` - Move down/up (or scroll in preview/full view)
+- `h/j/k/l` - Navigate (vim motions)
 - `enter` - Open folder / Edit note / Follow link
 - `e` - Edit note in $EDITOR
 - `n` - Create new note
 - `d` - Delete note
 - `g/G` - Jump to top/bottom
-- `v` - Toggle view (off → partial → full → off)
-- `V` - Toggle full screen view (distraction-free reading)
+- `v` - Toggle preview (off → partial → full)
+- `V` - Toggle full screen view (distraction-free)
 - `t` - Open tree browser (in full screen view)
 - `L` - Show all links in current note
 - `q` - Quit
+
+**Full Screen View:**
+- `h/j/k/l` - Move cursor (character by character)
+- `w/b` - Move by word forward/backward
+- `0/$` - Jump to start/end of line
+- `g/G` - Jump to top/bottom of file
 
 ### Server
 
