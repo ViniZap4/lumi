@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/atotto/clipboard"
+	"github.com/vinizap/lumi/tui-client/config"
 	"github.com/vinizap/lumi/tui-client/domain"
 	"github.com/vinizap/lumi/tui-client/editor"
 	"github.com/vinizap/lumi/tui-client/filesystem"
@@ -302,18 +303,17 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Create default config if doesn't exist
 				if _, err := os.Stat(configPath); os.IsNotExist(err) {
 					defaultConfig := `# Lumi Configuration
+# Editor command with args (e.g., "nvim --no-dashboard")
 editor: nvim
 theme: dark
 `
 					os.WriteFile(configPath, []byte(defaultConfig), 0644)
 				}
 				
-				// Open in editor
-				editorCmd := os.Getenv("EDITOR")
-				if editorCmd == "" {
-					editorCmd = "nvim"
-				}
-				return m, tea.ExecProcess(exec.Command(editorCmd, configPath), nil)
+				// Open in editor using config
+				cfg := config.Load()
+				args := append(cfg.EditorArgs, configPath)
+				return m, tea.ExecProcess(exec.Command(cfg.Editor, args...), nil)
 			case "t", "enter":
 				m.viewMode = ViewTree
 				return m, m.loadItems
