@@ -1231,91 +1231,98 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 	
 	var modal strings.Builder
 	
-	// Title
-	modal.WriteString(lipgloss.NewStyle().
-		Bold(true).
-		Foreground(primaryColor).
-		Render("🔍 Search Notes"))
-	modal.WriteString("\n\n")
-	
-	// Search type indicator and input
-	typeIndicator := "📄 Filename"
+	// Search input with type indicator
+	typeIcon := "📄"
+	typeLabel := "Filename"
 	if m.searchType == "content" {
-		typeIndicator = "📝 Content"
+		typeIcon = "📝"
+		typeLabel = "Content"
 	}
-	searchLine := fmt.Sprintf("%s: %s█", typeIndicator, m.searchQuery)
+	
+	searchLine := fmt.Sprintf("%s %s > %s█", typeIcon, typeLabel, m.searchQuery)
 	modal.WriteString(lipgloss.NewStyle().
 		Foreground(accentColor).
 		Bold(true).
 		Render(searchLine))
-	modal.WriteString("\n\n")
-	
-	// Results count
-	modal.WriteString(lipgloss.NewStyle().
-		Foreground(mutedColor).
-		Render(fmt.Sprintf("%d results", len(m.searchResults))))
 	modal.WriteString("\n")
 	modal.WriteString(strings.Repeat("─", modalWidth-4))
-	modal.WriteString("\n\n")
+	modal.WriteString("\n")
 	
-	// Results list
-	maxResults := 8
-	for i, item := range m.searchResults {
-		if i >= maxResults {
-			break
-		}
-		
-		icon := "📄"
-		if item.IsFolder {
-			icon = "📁"
-		}
-		line := icon + " " + item.Name
-		if len(line) > modalWidth-8 {
-			line = line[:modalWidth-8] + "..."
-		}
-		
-		if i == m.cursor {
-			line = lipgloss.NewStyle().
-				Foreground(accentColor).
-				Background(selectedBg).
-				Bold(true).
-				Render("▸ " + line)
+	// Results list with preview side-by-side
+	if len(m.searchResults) == 0 {
+		if m.searchQuery == "" {
+			modal.WriteString("\n")
+			modal.WriteString(DimItemStyle.Render("  Type to search..."))
 		} else {
-			line = "  " + line
+			modal.WriteString("\n")
+			modal.WriteString(DimItemStyle.Render("  No results found"))
 		}
-		
-		modal.WriteString(line)
 		modal.WriteString("\n")
-	}
-	
-	if len(m.searchResults) == 0 && m.searchQuery != "" {
-		modal.WriteString(DimItemStyle.Render("  No results found"))
-		modal.WriteString("\n")
-	}
-	
-	// Preview section
-	if m.cursor >= 0 && m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
-		modal.WriteString("\n")
-		modal.WriteString(strings.Repeat("─", modalWidth-4))
-		modal.WriteString("\n")
+	} else {
+		// Show results count
 		modal.WriteString(lipgloss.NewStyle().
-			Foreground(primaryColor).
-			Bold(true).
-			Render("Preview"))
+			Foreground(mutedColor).
+			Render(fmt.Sprintf("  %d results", len(m.searchResults))))
 		modal.WriteString("\n\n")
 		
-		note := m.searchResults[m.cursor].Note
-		previewLines := strings.Split(note.Content, "\n")
-		maxPreview := 6
-		for i := 0; i < min(len(previewLines), maxPreview); i++ {
-			line := previewLines[i]
-			if len(line) > modalWidth-6 {
-				line = line[:modalWidth-6] + "..."
+		// Results list
+		maxResults := 10
+		for i, item := range m.searchResults {
+			if i >= maxResults {
+				break
 			}
-			modal.WriteString(lipgloss.NewStyle().
-				Foreground(mutedColor).
-				Render("  " + line))
+			
+			icon := "📄"
+			if item.IsFolder {
+				icon = "📁"
+			}
+			
+			name := item.Name
+			if len(name) > 50 {
+				name = name[:47] + "..."
+			}
+			
+			if i == m.cursor {
+				line := lipgloss.NewStyle().
+					Foreground(accentColor).
+					Background(selectedBg).
+					Bold(true).
+					Render(fmt.Sprintf(" ▸ %s %s", icon, name))
+				modal.WriteString(line)
+			} else {
+				modal.WriteString(fmt.Sprintf("   %s %s", icon, name))
+			}
 			modal.WriteString("\n")
+		}
+		
+		// Preview section
+		if m.cursor >= 0 && m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
+			modal.WriteString("\n")
+			modal.WriteString(strings.Repeat("─", modalWidth-4))
+			modal.WriteString("\n")
+			
+			note := m.searchResults[m.cursor].Note
+			
+			// Show title
+			modal.WriteString(lipgloss.NewStyle().
+				Foreground(primaryColor).
+				Bold(true).
+				Render("  " + note.Title))
+			modal.WriteString("\n\n")
+			
+			// Show preview
+			previewLines := strings.Split(note.Content, "\n")
+			maxPreview := 5
+			for i := 0; i < min(len(previewLines), maxPreview); i++ {
+				line := previewLines[i]
+				if len(line) > modalWidth-6 {
+					line = line[:modalWidth-6] + "..."
+				}
+				modal.WriteString(lipgloss.NewStyle().
+					Foreground(mutedColor).
+					Render("  " + line))
+				modal.WriteString("\n")
+			}
 		}
 	}
 	
