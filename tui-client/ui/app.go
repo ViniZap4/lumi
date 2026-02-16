@@ -4,9 +4,9 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vinizap/lumi/tui-client/domain"
@@ -32,10 +32,13 @@ const (
 type Model struct {
 	rootDir      string
 	currentDir   string
-	folders      list.Model
-	notes        list.Model
+	folders      []folderItem
+	notes        []noteItem
+	folderCursor int
+	noteCursor   int
 	focus        focusPanel
 	mode         inputMode
+	previewMode  PreviewMode
 	input        string
 	width        int
 	height       int
@@ -43,21 +46,14 @@ type Model struct {
 }
 
 func NewModel(rootDir string) Model {
-	folders := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
-	folders.Title = "Folders"
-	folders.SetShowHelp(false)
-
-	notes := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
-	notes.Title = "Notes"
-	notes.SetShowHelp(false)
-
 	return Model{
-		rootDir:    rootDir,
-		currentDir: rootDir,
-		folders:    folders,
-		notes:      notes,
-		focus:      focusFolders,
-		mode:       modeNormal,
+		rootDir:     rootDir,
+		currentDir:  rootDir,
+		folders:     []folderItem{},
+		notes:       []noteItem{},
+		focus:       focusFolders,
+		mode:        modeNormal,
+		previewMode: PreviewPartial,
 	}
 }
 
@@ -105,6 +101,14 @@ func openEditorCmd(note *domain.Note) tea.Cmd {
 		}
 		return editorFinishedMsg{}
 	})
+}
+
+type folderItem struct {
+	folder *domain.Folder
+}
+
+type noteItem struct {
+	note *domain.Note
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -174,6 +178,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleTop()
 		case "G":
 			return m.handleBottom()
+		case "v":
+			// Toggle preview mode
+			switch m.previewMode {
+			case PreviewOff:
+				m.previewMode = PreviewPartial
+			case PreviewPartial:
+				m.previewMode = PreviewFull
+			case PreviewFull:
+				m.previewMode = PreviewOff
+			}
+			return m, nil
 		case "enter":
 			if m.focus == focusFolders {
 				return m.enterFolder()
@@ -186,7 +201,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input = ""
 			return m, nil
 		case "d":
-			if m.focus == focusNotes && len(m.notes.Items()) > 0 {
+			if m.focus == focusNotes && len(m.notes) > 0 {
 				m.mode = modeDelete
 			}
 			return m, nil
@@ -195,23 +210,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.updateSizes()
 		return m, nil
 
 	case foldersLoadedMsg:
-		items := make([]list.Item, len(msg.folders))
+		m.folders = make([]folderItem, len(msg.folders))
 		for i, f := range msg.folders {
-			items[i] = folderItem{f}
+			m.folders[i] = folderItem{f}
 		}
-		m.folders.SetItems(items)
 		return m, nil
 
 	case notesLoadedMsg:
-		items := make([]list.Item, len(msg.notes))
+		m.notes = make([]noteItem, len(msg.notes))
 		for i, n := range msg.notes {
-			items[i] = noteItem{n}
+			m.notes[i] = noteItem{n}
 		}
-		m.notes.SetItems(items)
 		return m, nil
 
 	case editorFinishedMsg:
@@ -227,60 +239,65 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleDown() (tea.Model, tea.Cmd) {
 	if m.focus == focusFolders {
-		m.folders.CursorDown()
+		if m.folderCursor < len(m.folders)-1 {
+			m.folderCursor++
+		}
 	} else {
-		m.notes.CursorDown()
+		if m.noteCursor < len(m.notes)-1 {
+			m.noteCursor++
+		}
 	}
 	return m, nil
 }
 
 func (m Model) handleUp() (tea.Model, tea.Cmd) {
 	if m.focus == focusFolders {
-		m.folders.CursorUp()
+		if m.folderCursor > 0 {
+			m.folderCursor--
+		}
 	} else {
-		m.notes.CursorUp()
+		if m.noteCursor > 0 {
+			m.noteCursor--
+		}
 	}
 	return m, nil
 }
 
 func (m Model) handleTop() (tea.Model, tea.Cmd) {
 	if m.focus == focusFolders {
-		m.folders.Select(0)
+		m.folderCursor = 0
 	} else {
-		m.notes.Select(0)
+		m.noteCursor = 0
 	}
 	return m, nil
 }
 
 func (m Model) handleBottom() (tea.Model, tea.Cmd) {
 	if m.focus == focusFolders {
-		m.folders.Select(len(m.folders.Items()) - 1)
+		m.folderCursor = len(m.folders) - 1
 	} else {
-		m.notes.Select(len(m.notes.Items()) - 1)
+		m.noteCursor = len(m.notes) - 1
 	}
 	return m, nil
 }
 
 func (m *Model) updateSizes() {
-	panelWidth := m.width/2 - 2
-	panelHeight := m.height - 4
-
-	m.folders.SetSize(panelWidth, panelHeight)
-	m.notes.SetSize(panelWidth, panelHeight)
+	// No longer needed with custom rendering
 }
 
 func (m Model) enterFolder() (tea.Model, tea.Cmd) {
-	if len(m.folders.Items()) == 0 {
+	if len(m.folders) == 0 {
 		return m, nil
 	}
 
-	item := m.folders.SelectedItem()
-	if item == nil {
+	if m.folderCursor >= len(m.folders) {
 		return m, nil
 	}
 
-	folder := item.(folderItem).folder
+	folder := m.folders[m.folderCursor].folder
 	m.currentDir = folder.Path
+	m.folderCursor = 0
+	m.noteCursor = 0
 
 	return m, tea.Batch(m.loadFolders, m.loadNotes)
 }
@@ -291,20 +308,21 @@ func (m Model) goUpFolder() (tea.Model, tea.Cmd) {
 	}
 
 	m.currentDir = filepath.Dir(m.currentDir)
+	m.folderCursor = 0
+	m.noteCursor = 0
 	return m, tea.Batch(m.loadFolders, m.loadNotes)
 }
 
 func (m Model) editNote() (tea.Model, tea.Cmd) {
-	if len(m.notes.Items()) == 0 {
+	if len(m.notes) == 0 {
 		return m, nil
 	}
 
-	item := m.notes.SelectedItem()
-	if item == nil {
+	if m.noteCursor >= len(m.notes) {
 		return m, nil
 	}
 
-	note := item.(noteItem).note
+	note := m.notes[m.noteCursor].note
 	return m, openEditorCmd(note)
 }
 
@@ -333,23 +351,25 @@ func (m Model) createNote() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) deleteNote() (tea.Model, tea.Cmd) {
-	if len(m.notes.Items()) == 0 {
+	if len(m.notes) == 0 {
 		m.mode = modeNormal
 		return m, nil
 	}
 
-	item := m.notes.SelectedItem()
-	if item == nil {
+	if m.noteCursor >= len(m.notes) {
 		m.mode = modeNormal
 		return m, nil
 	}
 
-	note := item.(noteItem).note
+	note := m.notes[m.noteCursor].note
 	if err := filesystem.DeleteNote(note.Path); err != nil {
 		m.err = err
 	}
 
 	m.mode = modeNormal
+	if m.noteCursor > 0 {
+		m.noteCursor--
+	}
 	return m, tea.Batch(m.loadNotes, m.loadFolders)
 }
 
@@ -358,21 +378,69 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	foldersView := m.folders.View()
-	notesView := m.notes.View()
-
-	if m.focus == focusFolders {
-		foldersView = ActiveStyle.Render(foldersView)
-		notesView = InactiveStyle.Render(notesView)
+	// Calculate dimensions
+	var foldersWidth, notesWidth, previewWidth int
+	if m.previewMode == PreviewOff {
+		foldersWidth = m.width / 3
+		notesWidth = m.width - foldersWidth - 4
+		previewWidth = 0
 	} else {
-		foldersView = InactiveStyle.Render(foldersView)
-		notesView = ActiveStyle.Render(notesView)
+		foldersWidth = m.width / 5
+		notesWidth = m.width / 4
+		previewWidth = m.width - foldersWidth - notesWidth - 6
 	}
 
-	panels := lipgloss.JoinHorizontal(lipgloss.Top, foldersView, notesView)
-	
-	currentPath := lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(m.currentDir)
-	
+	panelHeight := m.height - 4
+
+	// Render folders panel
+	foldersView := m.renderFolders(foldersWidth, panelHeight)
+	if m.focus == focusFolders {
+		foldersView = ActivePanelStyle.Width(foldersWidth).Height(panelHeight).Render(foldersView)
+	} else {
+		foldersView = InactivePanelStyle.Width(foldersWidth).Height(panelHeight).Render(foldersView)
+	}
+
+	// Render notes panel
+	notesView := m.renderNotes(notesWidth, panelHeight)
+	if m.focus == focusNotes {
+		notesView = ActivePanelStyle.Width(notesWidth).Height(panelHeight).Render(notesView)
+	} else {
+		notesView = InactivePanelStyle.Width(notesWidth).Height(panelHeight).Render(notesView)
+	}
+
+	// Render preview panel
+	var panels string
+	if m.previewMode != PreviewOff {
+		var selectedNote *domain.Note
+		if len(m.notes) > 0 && m.noteCursor < len(m.notes) {
+			selectedNote = m.notes[m.noteCursor].note
+		}
+		previewView := renderPreview(selectedNote, m.previewMode, previewWidth, panelHeight)
+		previewView = InactivePanelStyle.Width(previewWidth).Height(panelHeight).Render(previewView)
+		panels = lipgloss.JoinHorizontal(lipgloss.Top, foldersView, notesView, previewView)
+	} else {
+		panels = lipgloss.JoinHorizontal(lipgloss.Top, foldersView, notesView)
+	}
+
+	// Status bar
+	statusLeft := StatusBarStyle.Render(m.currentDir)
+	var statusRight string
+	switch m.previewMode {
+	case PreviewOff:
+		statusRight = DimItemStyle.Render("Preview: off")
+	case PreviewPartial:
+		statusRight = DimItemStyle.Render("Preview: partial")
+	case PreviewFull:
+		statusRight = DimItemStyle.Render("Preview: full")
+	}
+	statusBar := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		statusLeft,
+		strings.Repeat(" ", m.width-lipgloss.Width(statusLeft)-lipgloss.Width(statusRight)),
+		statusRight,
+	)
+
+	// Help bar
 	var help string
 	switch m.mode {
 	case modeNewNote:
@@ -380,24 +448,97 @@ func (m Model) View() string {
 	case modeDelete:
 		help = "Delete note? (y/n)"
 	default:
-		help = HelpStyle.Render("q=quit | tab=switch | h/l=folder nav | j/k=move | e/enter=edit | n=new | d=delete | g/G=top/bottom")
+		helpKeys := []string{
+			HelpKeyStyle.Render("q") + "=quit",
+			HelpKeyStyle.Render("tab") + "=switch",
+			HelpKeyStyle.Render("h/l") + "=folders",
+			HelpKeyStyle.Render("j/k") + "=move",
+			HelpKeyStyle.Render("e") + "=edit",
+			HelpKeyStyle.Render("n") + "=new",
+			HelpKeyStyle.Render("d") + "=delete",
+			HelpKeyStyle.Render("v") + "=preview",
+		}
+		help = HelpStyle.Render(strings.Join(helpKeys, " | "))
 	}
-	
-	return lipgloss.JoinVertical(lipgloss.Left, currentPath, panels, help)
+
+	return lipgloss.JoinVertical(lipgloss.Left, statusBar, panels, help)
 }
 
-type folderItem struct {
-	folder *domain.Folder
+func (m Model) renderFolders(width, height int) string {
+	var content strings.Builder
+
+	content.WriteString(TitleStyle.Render("📁 Folders"))
+	content.WriteString("\n\n")
+
+	if len(m.folders) == 0 {
+		content.WriteString(DimItemStyle.Render("No folders"))
+		return content.String()
+	}
+
+	start := max(0, m.folderCursor-height+5)
+	end := min(len(m.folders), start+height-3)
+
+	for i := start; i < end; i++ {
+		folder := m.folders[i].folder
+		line := folder.Name
+
+		if i == m.folderCursor {
+			line = SelectedItemStyle.Render("▸ " + line)
+		} else {
+			line = NormalItemStyle.Render("  " + line)
+		}
+
+		content.WriteString(line)
+		content.WriteString("\n")
+	}
+
+	return content.String()
 }
 
-func (f folderItem) FilterValue() string { return f.folder.Name }
-func (f folderItem) Title() string       { return f.folder.Name }
-func (f folderItem) Description() string { return f.folder.Path }
+func (m Model) renderNotes(width, height int) string {
+	var content strings.Builder
 
-type noteItem struct {
-	note *domain.Note
+	content.WriteString(TitleStyle.Render("📝 Notes"))
+	content.WriteString("\n\n")
+
+	if len(m.notes) == 0 {
+		content.WriteString(DimItemStyle.Render("No notes"))
+		return content.String()
+	}
+
+	start := max(0, m.noteCursor-height+5)
+	end := min(len(m.notes), start+height-3)
+
+	for i := start; i < end; i++ {
+		note := m.notes[i].note
+		line := note.Title
+
+		if i == m.noteCursor {
+			line = SelectedItemStyle.Render("▸ " + line)
+			if len(note.Tags) > 0 {
+				line += "\n" + DimItemStyle.Render("  "+strings.Join(note.Tags, ", "))
+			}
+		} else {
+			line = NormalItemStyle.Render("  " + line)
+		}
+
+		content.WriteString(line)
+		content.WriteString("\n")
+	}
+
+	return content.String()
 }
 
-func (n noteItem) FilterValue() string { return n.note.Title }
-func (n noteItem) Title() string       { return n.note.Title }
-func (n noteItem) Description() string { return n.note.ID }
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
