@@ -22,7 +22,6 @@ type SimpleModel struct {
 	currentDir   string
 	items        []Item
 	cursor       int
-	search       string
 	width        int
 	height       int
 	viewMode     ViewMode
@@ -32,7 +31,6 @@ type SimpleModel struct {
 	colCursor    int
 	err          error
 	renderer     *glamour.TermRenderer
-	searchMode   bool // true = recursive search
 	
 	// Enhanced modes
 	visualMode   bool
@@ -180,17 +178,6 @@ func (m SimpleModel) loadItems() tea.Msg {
 			Path:     n.Path,
 			Note:     n,
 		})
-	}
-
-	// Filter by search
-	if m.search != "" {
-		var filtered []Item
-		for _, item := range items {
-			if strings.Contains(strings.ToLower(item.Name), strings.ToLower(m.search)) {
-				filtered = append(filtered, item)
-			}
-		}
-		items = filtered
 	}
 
 	return itemsLoadedMsg{items}
@@ -665,15 +652,6 @@ func (m SimpleModel) renderTree() string {
 
 	s.WriteString(title)
 	s.WriteString("\n\n")
-
-	// Search bar
-	if m.search != "" {
-		searchBar := lipgloss.NewStyle().
-			Foreground(accentColor).
-			Render("🔍 " + m.search + "█")
-		s.WriteString(searchBar)
-		s.WriteString("\n\n")
-	}
 
 	// Items list
 	maxItems := m.height - 6
