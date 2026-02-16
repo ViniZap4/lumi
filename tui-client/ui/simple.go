@@ -4,6 +4,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -205,6 +206,29 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchType = "filename"
 				m.inFileSearch = false
 				return m, func() tea.Msg { return m.performSearch() }
+			case "c":
+				// Edit config - create if doesn't exist
+				configDir := filepath.Join(os.Getenv("HOME"), ".config", "lumi")
+				configPath := filepath.Join(configDir, "config.yaml")
+				
+				// Create config dir if needed
+				os.MkdirAll(configDir, 0755)
+				
+				// Create default config if doesn't exist
+				if _, err := os.Stat(configPath); os.IsNotExist(err) {
+					defaultConfig := `# Lumi Configuration
+editor: nvim
+theme: dark
+`
+					os.WriteFile(configPath, []byte(defaultConfig), 0644)
+				}
+				
+				// Open in editor
+				editorCmd := os.Getenv("EDITOR")
+				if editorCmd == "" {
+					editorCmd = "nvim"
+				}
+				return m, tea.ExecProcess(exec.Command(editorCmd, configPath), nil)
 			case "enter", "t":
 				m.viewMode = ViewTree
 				return m, m.loadItems
@@ -1035,27 +1059,19 @@ func (m SimpleModel) renderHome() string {
 	s.WriteString(subtitle)
 	s.WriteString("\n\n\n")
 
-	// Keybindings box
+	// Keybindings (no border)
 	keysContent := lipgloss.NewStyle().
 		Foreground(secondaryColor).
-		Render(
-			"  /      Search notes\n" +
-			"  enter  Browse tree\n" +
-			"  q      Quit",
-		)
-	
-	keysBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(accentColor).
-		Padding(1, 3).
-		Render(keysContent)
-	
-	centered := lipgloss.NewStyle().
 		Width(m.width).
 		Align(lipgloss.Center).
-		Render(keysBox)
+		Render(
+			"/      Search notes\n" +
+			"enter  Browse tree\n" +
+			"c      Edit config\n" +
+			"q      Quit",
+		)
 	
-	s.WriteString(centered)
+	s.WriteString(keysContent)
 
 	return s.String()
 }
