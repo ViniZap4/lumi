@@ -1,0 +1,5 @@
+# server/.dockerignore
+*.md
+.git
+.gitignore
+lumi-server
