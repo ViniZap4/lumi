@@ -310,8 +310,6 @@
           bind:value={searchQuery}
           on:input={() => performSearch()}
           placeholder={`[${searchType === 'filename' ? 'Filename' : 'Content'}] Type to search...`}
-        />
-          placeholder={`[${searchType === 'filename' ? 'Filename' : 'Content'}] Type to search...`}
           autofocus
         />
       </div>
