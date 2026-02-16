@@ -27,3 +27,6 @@ dist/
 # Env
 .env
 .env.local
+
+# Docker
+docker-compose.override.yml

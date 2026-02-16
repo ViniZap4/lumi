@@ -4,6 +4,27 @@ A local-first, Markdown-based note-taking ecosystem with terminal and web client
 
 ## Quick Start
 
+### Docker Compose (Recommended)
+
+```bash
+# Copy environment file
+cp .env.example .env
+
+# Edit .env with your settings (optional)
+# Then start everything:
+docker-compose up -d
+
+# Access:
+# - Web UI: http://localhost:3000
+# - API: http://localhost:8080
+```
+
+**Environment variables:**
+- `SERVER_PORT` - Server port (default: 8080)
+- `WEB_PORT` - Web UI port (default: 3000)
+- `LUMI_PASSWORD` - Authentication token (default: dev)
+- `NOTES_PATH` - Path to notes directory (default: ./notes)
+
 ### TUI Client (Terminal)
 
 ```bash

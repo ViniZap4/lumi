@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  server:
+    build: ./server
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    volumes:
+      - "${NOTES_PATH:-./notes}:/notes"
+    environment:
+      - LUMI_ROOT=/notes
+      - LUMI_PASSWORD=${LUMI_PASSWORD:-dev}
+      - LUMI_PORT=8080
+    restart: unless-stopped
+
+  web:
+    build: ./web-client
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    environment:
+      - VITE_LUMI_SERVER_URL=http://localhost:${SERVER_PORT:-8080}
+      - VITE_LUMI_TOKEN=${LUMI_PASSWORD:-dev}
+    depends_on:
+      - server
+    restart: unless-stopped
