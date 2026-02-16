@@ -1226,47 +1226,55 @@ func (m SimpleModel) renderPreviewCol(width, height int) string {
 
 
 func (m SimpleModel) renderWithSearchModal(base string) string {
-	// Telescope-style centered search modal
+	// Telescope-style search modal
 	modalWidth := min(m.width-10, 100)
 	
 	var modal strings.Builder
 	
-	// Search input with type indicator
-	typeIcon := "📄"
+	// Title bar
+	modal.WriteString(lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Render("🔍 Find Notes"))
+	modal.WriteString("\n\n")
+	
+	// Search input box
 	typeLabel := "Filename"
 	if m.searchType == "content" {
-		typeIcon = "📝"
 		typeLabel = "Content"
 	}
 	
-	searchLine := fmt.Sprintf("%s %s > %s█", typeIcon, typeLabel, m.searchQuery)
-	modal.WriteString(lipgloss.NewStyle().
-		Foreground(accentColor).
-		Bold(true).
-		Render(searchLine))
-	modal.WriteString("\n")
-	modal.WriteString(strings.Repeat("─", modalWidth-4))
-	modal.WriteString("\n")
+	inputBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accentColor).
+		Padding(0, 1).
+		Width(modalWidth - 8).
+		Render(fmt.Sprintf("[%s] %s", typeLabel, m.searchQuery+"█"))
 	
-	// Results list with preview side-by-side
+	modal.WriteString(inputBox)
+	modal.WriteString("\n\n")
+	
+	// Results section
 	if len(m.searchResults) == 0 {
-		if m.searchQuery == "" {
-			modal.WriteString("\n")
-			modal.WriteString(DimItemStyle.Render("  Type to search..."))
-		} else {
-			modal.WriteString("\n")
-			modal.WriteString(DimItemStyle.Render("  No results found"))
-		}
-		modal.WriteString("\n")
-	} else {
-		// Show results count
 		modal.WriteString(lipgloss.NewStyle().
 			Foreground(mutedColor).
-			Render(fmt.Sprintf("  %d results", len(m.searchResults))))
+			Italic(true).
+			Render("  No results"))
+		modal.WriteString("\n")
+	} else {
+		// Results header
+		modal.WriteString(lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Render(fmt.Sprintf("  Results (%d)", len(m.searchResults))))
 		modal.WriteString("\n\n")
 		
-		// Results list
-		maxResults := 10
+		// Split view: results on left, preview on right
+		leftWidth := (modalWidth - 8) / 2
+		rightWidth := modalWidth - 8 - leftWidth - 3
+		
+		// Build results list
+		var resultsList strings.Builder
+		maxResults := 12
 		for i, item := range m.searchResults {
 			if i >= maxResults {
 				break
@@ -1278,51 +1286,81 @@ func (m SimpleModel) renderWithSearchModal(base string) string {
 			}
 			
 			name := item.Name
-			if len(name) > 50 {
-				name = name[:47] + "..."
+			if len(name) > leftWidth-6 {
+				name = name[:leftWidth-9] + "..."
 			}
 			
 			if i == m.cursor {
 				line := lipgloss.NewStyle().
 					Foreground(accentColor).
 					Background(selectedBg).
-					Bold(true).
+					Width(leftWidth).
 					Render(fmt.Sprintf(" ▸ %s %s", icon, name))
-				modal.WriteString(line)
+				resultsList.WriteString(line)
 			} else {
-				modal.WriteString(fmt.Sprintf("   %s %s", icon, name))
+				resultsList.WriteString(lipgloss.NewStyle().
+					Width(leftWidth).
+					Render(fmt.Sprintf("   %s %s", icon, name)))
 			}
-			modal.WriteString("\n")
+			resultsList.WriteString("\n")
 		}
 		
-		// Preview section
+		// Build preview
+		var previewBox strings.Builder
 		if m.cursor >= 0 && m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
-			modal.WriteString("\n")
-			modal.WriteString(strings.Repeat("─", modalWidth-4))
-			modal.WriteString("\n")
-			
 			note := m.searchResults[m.cursor].Note
 			
-			// Show title
-			modal.WriteString(lipgloss.NewStyle().
+			// Title
+			previewBox.WriteString(lipgloss.NewStyle().
 				Foreground(primaryColor).
 				Bold(true).
-				Render("  " + note.Title))
-			modal.WriteString("\n\n")
+				Render(note.Title))
+			previewBox.WriteString("\n")
+			previewBox.WriteString(strings.Repeat("─", rightWidth))
+			previewBox.WriteString("\n")
 			
-			// Show preview
+			// Content preview
 			previewLines := strings.Split(note.Content, "\n")
-			maxPreview := 5
+			maxPreview := 10
 			for i := 0; i < min(len(previewLines), maxPreview); i++ {
 				line := previewLines[i]
-				if len(line) > modalWidth-6 {
-					line = line[:modalWidth-6] + "..."
+				if len(line) > rightWidth {
+					line = line[:rightWidth-3] + "..."
 				}
-				modal.WriteString(lipgloss.NewStyle().
+				previewBox.WriteString(lipgloss.NewStyle().
 					Foreground(mutedColor).
-					Render("  " + line))
-				modal.WriteString("\n")
+					Render(line))
+				previewBox.WriteString("\n")
 			}
+		} else {
+			previewBox.WriteString(lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Italic(true).
+				Render("No preview available"))
+		}
+		
+		// Combine side by side
+		resultsLines := strings.Split(resultsList.String(), "\n")
+		previewLines := strings.Split(previewBox.String(), "\n")
+		maxLines := max(len(resultsLines), len(previewLines))
+		
+		for i := 0; i < maxLines; i++ {
+			// Left side (results)
+			if i < len(resultsLines) {
+				modal.WriteString(resultsLines[i])
+			} else {
+				modal.WriteString(strings.Repeat(" ", leftWidth))
+			}
+			
+			// Separator
+			modal.WriteString(" │ ")
+			
+			// Right side (preview)
+			if i < len(previewLines) {
+				modal.WriteString(previewLines[i])
+			}
+			
+			modal.WriteString("\n")
 		}
 	}
 	
