@@ -69,6 +69,8 @@ type Item struct {
 }
 
 func NewSimpleModel(rootDir string) SimpleModel {
+	cfg := config.Load()
+	
 	renderer, _ := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(100),
@@ -79,6 +81,7 @@ func NewSimpleModel(rootDir string) SimpleModel {
 		items:      []Item{},
 		viewMode:   ViewHome,
 		renderer:   renderer,
+		searchType: cfg.SearchType,
 	}
 }
 
@@ -303,9 +306,18 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Create default config if doesn't exist
 				if _, err := os.Stat(configPath); os.IsNotExist(err) {
 					defaultConfig := `# Lumi Configuration
-# Editor command with args (e.g., "nvim --no-dashboard")
+
+# Editor command with args (e.g., "nvim no-dashboard")
 editor: nvim
+
+# Theme (dark or light)
 theme: dark
+
+# TUI Settings
+show_line_numbers: false
+cursor_style: block
+preview_lines: 10
+default_search_type: filename
 `
 					os.WriteFile(configPath, []byte(defaultConfig), 0644)
 				}

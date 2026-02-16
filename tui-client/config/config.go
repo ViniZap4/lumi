@@ -11,13 +11,23 @@ type Config struct {
 	Editor      string
 	EditorArgs  []string
 	Theme       string
+	
+	// TUI settings
+	ShowLineNumbers bool
+	CursorStyle     string // "block", "underline", "bar"
+	PreviewLines    int
+	SearchType      string // "filename" or "content"
 }
 
 func Load() *Config {
 	cfg := &Config{
-		Editor:     "nvim",
-		EditorArgs: []string{},
-		Theme:      "dark",
+		Editor:          "nvim",
+		EditorArgs:      []string{},
+		Theme:           "dark",
+		ShowLineNumbers: false,
+		CursorStyle:     "block",
+		PreviewLines:    10,
+		SearchType:      "filename",
 	}
 	
 	configPath := filepath.Join(os.Getenv("HOME"), ".config", "lumi", "config.yaml")
@@ -54,8 +64,35 @@ func Load() *Config {
 			}
 		case "theme":
 			cfg.Theme = value
+		case "show_line_numbers":
+			cfg.ShowLineNumbers = value == "true"
+		case "cursor_style":
+			cfg.CursorStyle = value
+		case "preview_lines":
+			if value == "5" || value == "10" || value == "15" || value == "20" {
+				cfg.PreviewLines = parseInt(value)
+			}
+		case "default_search_type":
+			if value == "filename" || value == "content" {
+				cfg.SearchType = value
+			}
 		}
 	}
 	
 	return cfg
+}
+
+func parseInt(s string) int {
+	switch s {
+	case "5":
+		return 5
+	case "10":
+		return 10
+	case "15":
+		return 15
+	case "20":
+		return 20
+	default:
+		return 10
+	}
 }
