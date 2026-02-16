@@ -117,7 +117,7 @@ func (m SimpleModel) searchRecursive(query string) []Item {
 // Search in content or filename
 func (m SimpleModel) performSearch() tea.Msg {
 	if m.searchQuery == "" {
-		return itemsLoadedMsg{m.searchResults}
+		return searchResultsMsg{[]Item{}}
 	}
 	
 	var results []Item
@@ -152,8 +152,11 @@ func (m SimpleModel) performSearch() tea.Msg {
 		return nil
 	})
 	
-	m.searchResults = results
-	return itemsLoadedMsg{results}
+	return searchResultsMsg{results}
+}
+
+type searchResultsMsg struct {
+	results []Item
 }
 
 func (m SimpleModel) loadItems() tea.Msg {
@@ -622,6 +625,10 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case itemsLoadedMsg:
 		m.items = msg.items
+		
+	case searchResultsMsg:
+		m.searchResults = msg.results
+		m.cursor = 0
 	}
 
 	return m, nil
@@ -981,50 +988,58 @@ func (m SimpleModel) followLinkAtCursor() tea.Cmd {
 func (m SimpleModel) renderHome() string {
 	var s strings.Builder
 
-	// ASCII art centered
-	art := `
-  ██╗     ██╗   ██╗███╗   ███╗██╗
-  ██║     ██║   ██║████╗ ████║██║
-  ██║     ██║   ██║██╔████╔██║██║
-  ██║     ██║   ██║██║╚██╔╝██║██║
-  ███████╗╚██████╔╝██║ ╚═╝ ██║██║
-  ╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝
-`
-	artStyle := lipgloss.NewStyle().
+	// Calculate vertical centering
+	contentHeight := 12
+	topMargin := (m.height - contentHeight) / 2
+	if topMargin < 0 {
+		topMargin = 0
+	}
+	
+	// Add top spacing
+	for i := 0; i < topMargin; i++ {
+		s.WriteString("\n")
+	}
+	
+	// Title
+	title := lipgloss.NewStyle().
 		Foreground(primaryColor).
 		Bold(true).
 		Width(m.width).
 		Align(lipgloss.Center).
-		MarginTop(m.height/4)
-	s.WriteString(artStyle.Render(art))
+		Render("✨ LUMI")
+	s.WriteString(title)
 	s.WriteString("\n\n")
 
 	// Subtitle
 	subtitle := lipgloss.NewStyle().
 		Foreground(mutedColor).
-		Italic(true).
 		Width(m.width).
 		Align(lipgloss.Center).
-		Render("Local-first Markdown notes with vim motions")
+		Render("Local-first Markdown notes")
 	s.WriteString(subtitle)
 	s.WriteString("\n\n\n")
 
-	// Keybindings
-	keys := []string{
-		"/ - Search notes",
-		"enter - Browse tree",
-		"q - Quit",
-	}
+	// Keybindings box
+	keysContent := lipgloss.NewStyle().
+		Foreground(secondaryColor).
+		Render(
+			"  /      Search notes\n" +
+			"  enter  Browse tree\n" +
+			"  q      Quit",
+		)
 	
-	for _, key := range keys {
-		keyLine := lipgloss.NewStyle().
-			Foreground(secondaryColor).
-			Width(m.width).
-			Align(lipgloss.Center).
-			Render(key)
-		s.WriteString(keyLine)
-		s.WriteString("\n")
-	}
+	keysBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accentColor).
+		Padding(1, 3).
+		Render(keysContent)
+	
+	centered := lipgloss.NewStyle().
+		Width(m.width).
+		Align(lipgloss.Center).
+		Render(keysBox)
+	
+	s.WriteString(centered)
 
 	return s.String()
 }
