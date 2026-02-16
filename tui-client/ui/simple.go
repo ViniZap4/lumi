@@ -342,11 +342,23 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.cursor > 0 {
 						m.cursor--
 					}
+				case "h":
+					// Go up directory in modal
+					if m.currentDir != m.rootDir {
+						m.currentDir = filepath.Dir(m.currentDir)
+						m.cursor = 0
+						return m, m.loadItems
+					}
 				case "enter", "l":
-					// Open selected note
+					// Open folder or note
 					if m.cursor < len(m.items) {
 						item := m.items[m.cursor]
-						if !item.IsFolder && item.Note != nil {
+						if item.IsFolder {
+							// Navigate into folder
+							m.currentDir = item.Path
+							m.cursor = 0
+							return m, m.loadItems
+						} else if item.Note != nil {
 							// If split mode is active, open in split
 							if m.splitMode != "" {
 								m.splitNote = item.Note
@@ -359,17 +371,6 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.showTree = false
 							}
 						}
-					}
-				case "backspace":
-					if len(m.search) > 0 {
-						m.search = m.search[:len(m.search)-1]
-						return m, m.loadItems
-					}
-				default:
-					// Add to search
-					if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
-						m.search += msg.String()
-						return m, m.loadItems
 					}
 				}
 				return m, nil
@@ -499,6 +500,54 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Tree view mode
+		// If search modal is open, handle it first
+		if m.showSearch && !m.inFileSearch {
+			switch msg.String() {
+			case "esc":
+				m.showSearch = false
+				m.searchQuery = ""
+				m.cursor = 0
+				return m, nil
+			case "ctrl+f":
+				if m.searchType == "filename" {
+					m.searchType = "content"
+				} else {
+					m.searchType = "filename"
+				}
+				return m, func() tea.Msg { return m.performSearch() }
+			case "j", "down":
+				if m.cursor < len(m.searchResults)-1 {
+					m.cursor++
+				}
+			case "k", "up":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "enter":
+				if m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
+					m.viewMode = ViewFullNote
+					m.fullNote = m.searchResults[m.cursor].Note
+					m.contentLines = strings.Split(m.fullNote.Content, "\n")
+					m.lineCursor = 0
+					m.colCursor = 0
+					m.showSearch = false
+					m.cursor = 0
+				}
+			case "backspace":
+				if len(m.searchQuery) > 0 {
+					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+					return m, func() tea.Msg { return m.performSearch() }
+				}
+			default:
+				if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
+					m.searchQuery += msg.String()
+					return m, func() tea.Msg { return m.performSearch() }
+				}
+			}
+			return m, nil
+		}
+		
+		// Normal tree navigation
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -771,19 +820,20 @@ func (m SimpleModel) renderWithTreeModal(base string) string {
 	modalHeight := min(m.height-6, 30)
 	
 	var modal strings.Builder
+	
+	// Show current path
+	pathDisplay := strings.TrimPrefix(m.currentDir, m.rootDir)
+	if pathDisplay == "" {
+		pathDisplay = "~"
+	} else {
+		pathDisplay = "~" + pathDisplay
+	}
+	
 	modal.WriteString(lipgloss.NewStyle().
 		Bold(true).
 		Foreground(primaryColor).
-		Render("📂 Select Note"))
+		Render("📂 " + pathDisplay))
 	modal.WriteString("\n\n")
-	
-	// Search bar
-	if m.search != "" {
-		modal.WriteString(lipgloss.NewStyle().
-			Foreground(accentColor).
-			Render("🔍 " + m.search + "█"))
-		modal.WriteString("\n\n")
-	}
 	
 	// Items
 	maxItems := modalHeight - 8
@@ -793,10 +843,12 @@ func (m SimpleModel) renderWithTreeModal(base string) string {
 		}
 		
 		icon := "📄"
+		name := item.Name
 		if item.IsFolder {
 			icon = "📁"
+			name += "/"
 		}
-		line := icon + " " + item.Name
+		line := icon + " " + name
 		
 		if i == m.cursor {
 			line = lipgloss.NewStyle().
@@ -812,8 +864,13 @@ func (m SimpleModel) renderWithTreeModal(base string) string {
 		modal.WriteString("\n")
 	}
 	
+	if len(m.items) == 0 {
+		modal.WriteString(DimItemStyle.Render("  (empty)"))
+		modal.WriteString("\n")
+	}
+	
 	modal.WriteString("\n")
-	modal.WriteString(HelpStyle.Render("hjkl=move | enter=open | esc=close"))
+	modal.WriteString(HelpStyle.Render("hjkl=navigate | l/enter=open | h=back | esc=close"))
 	
 	// Style modal
 	modalBox := lipgloss.NewStyle().
@@ -972,8 +1029,41 @@ func (m SimpleModel) renderParentCol(width, height int) string {
 	var s strings.Builder
 	
 	if m.currentDir != m.rootDir {
-		s.WriteString(DimItemStyle.Render(".."))
-		s.WriteString("\n")
+		// Show parent directory items
+		parentDir := filepath.Dir(m.currentDir)
+		parentItems, _ := filesystem.ListFolders(parentDir)
+		parentNotes, _ := filesystem.ListNotes(parentDir)
+		
+		maxItems := height - 2
+		count := 0
+		
+		// Show folders
+		for _, f := range parentItems {
+			if count >= maxItems {
+				break
+			}
+			icon := "📁"
+			name := f.Name
+			if f.Path == m.currentDir {
+				// Highlight current directory
+				name = lipgloss.NewStyle().
+					Foreground(accentColor).
+					Render("▸ " + name)
+			}
+			s.WriteString(icon + " " + name)
+			s.WriteString("\n")
+			count++
+		}
+		
+		// Show notes
+		for _, n := range parentNotes {
+			if count >= maxItems {
+				break
+			}
+			s.WriteString("📄 " + n.Title)
+			s.WriteString("\n")
+			count++
+		}
 	}
 
 	return lipgloss.NewStyle().
