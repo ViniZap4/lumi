@@ -274,6 +274,7 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "esc":
 					m.showSearch = false
 					m.searchQuery = ""
+					m.cursor = 0
 					return m, nil
 				case "ctrl+f":
 					// Toggle search type
@@ -287,10 +288,15 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.cursor < len(m.searchResults)-1 {
 						m.cursor++
 					}
+					return m, nil
 				case "k", "up":
 					if m.cursor > 0 {
 						m.cursor--
 					}
+					return m, nil
+				case "h", "l":
+					// Ignore navigation keys in search
+					return m, nil
 				case "enter":
 					// Open selected result
 					if m.cursor < len(m.searchResults) {
@@ -304,6 +310,7 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.cursor = 0
 						}
 					}
+					return m, nil
 				case "s":
 					// Open in horizontal split
 					if m.cursor < len(m.searchResults) {
@@ -315,6 +322,7 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.cursor = 0
 						}
 					}
+					return m, nil
 				case "S":
 					// Open in vertical split
 					if m.cursor < len(m.searchResults) {
@@ -326,6 +334,7 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.cursor = 0
 						}
 					}
+					return m, nil
 				case "backspace":
 					if len(m.searchQuery) > 0 {
 						m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
@@ -989,7 +998,7 @@ func (m SimpleModel) renderHome() string {
 	var s strings.Builder
 
 	// Calculate vertical centering
-	contentHeight := 12
+	contentHeight := 18
 	topMargin := (m.height - contentHeight) / 2
 	if topMargin < 0 {
 		topMargin = 0
@@ -1000,15 +1009,22 @@ func (m SimpleModel) renderHome() string {
 		s.WriteString("\n")
 	}
 	
-	// Title
-	title := lipgloss.NewStyle().
+	// ASCII art
+	art := `
+  ██╗     ██╗   ██╗███╗   ███╗██╗
+  ██║     ██║   ██║████╗ ████║██║
+  ██║     ██║   ██║██╔████╔██║██║
+  ██║     ██║   ██║██║╚██╔╝██║██║
+  ███████╗╚██████╔╝██║ ╚═╝ ██║██║
+  ╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝
+`
+	artStyle := lipgloss.NewStyle().
 		Foreground(primaryColor).
 		Bold(true).
 		Width(m.width).
-		Align(lipgloss.Center).
-		Render("✨ LUMI")
-	s.WriteString(title)
-	s.WriteString("\n\n")
+		Align(lipgloss.Center)
+	s.WriteString(artStyle.Render(art))
+	s.WriteString("\n")
 
 	// Subtitle
 	subtitle := lipgloss.NewStyle().
