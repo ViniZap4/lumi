@@ -47,6 +47,10 @@ type SimpleModel struct {
 	searchQuery  string
 	searchType   string // "content" or "filename"
 	searchResults []Item
+	inFileSearch bool // true when searching within current note
+	
+	// Split view
+	activeSplit  int // 0 = main, 1 = split
 }
 
 type ViewMode int
@@ -204,6 +208,13 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "q", "ctrl+c":
 				return m, tea.Quit
+			case "/":
+				// Open search modal from home
+				m.showSearch = true
+				m.searchQuery = ""
+				m.searchType = "filename"
+				m.inFileSearch = false
+				return m, func() tea.Msg { return m.performSearch() }
 			case "enter", "t":
 				m.viewMode = ViewTree
 				return m, m.loadItems
@@ -222,6 +233,60 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.viewMode == ViewFullNote {
 			// Search modal is open
 			if m.showSearch {
+				// In-file search
+				if m.inFileSearch {
+					switch msg.String() {
+					case "esc":
+						m.showSearch = false
+						m.searchQuery = ""
+						m.cursor = 0
+						return m, nil
+					case "j", "down":
+						// Find matches
+						var matches []int
+						query := strings.ToLower(m.searchQuery)
+						for i, line := range m.contentLines {
+							if strings.Contains(strings.ToLower(line), query) {
+								matches = append(matches, i)
+							}
+						}
+						if m.cursor < len(matches)-1 {
+							m.cursor++
+						}
+					case "k", "up":
+						if m.cursor > 0 {
+							m.cursor--
+						}
+					case "enter":
+						// Jump to selected line
+						var matches []int
+						query := strings.ToLower(m.searchQuery)
+						for i, line := range m.contentLines {
+							if strings.Contains(strings.ToLower(line), query) {
+								matches = append(matches, i)
+							}
+						}
+						if m.cursor < len(matches) {
+							m.lineCursor = matches[m.cursor]
+							m.colCursor = 0
+							m.showSearch = false
+							m.cursor = 0
+						}
+					case "backspace":
+						if len(m.searchQuery) > 0 {
+							m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+							m.cursor = 0
+						}
+					default:
+						if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
+							m.searchQuery += msg.String()
+							m.cursor = 0
+						}
+					}
+					return m, nil
+				}
+				
+				// Global search
 				switch msg.String() {
 				case "esc":
 					m.showSearch = false
@@ -351,13 +416,18 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.loadItems
 				}
 			case "/":
-				// Open search modal
-				m.showSearch = !m.showSearch
+				// Open search modal - in-file search
+				m.showSearch = true
 				m.searchQuery = ""
+				m.inFileSearch = true // Search within current note
+				m.searchType = "content"
+			case "ctrl+/":
+				// Global search modal
+				m.showSearch = true
+				m.searchQuery = ""
+				m.inFileSearch = false
 				m.searchType = "filename"
-				if m.showSearch {
-					return m, func() tea.Msg { return m.performSearch() }
-				}
+				return m, func() tea.Msg { return m.performSearch() }
 			case "s":
 				// Horizontal split
 				m.splitMode = "horizontal"
@@ -428,11 +498,12 @@ func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "/":
-			// Start search mode - next chars will be added to search
-			// (search is already being added in default case)
-			if m.search == "" {
-				// Just pressed /, wait for input
-			}
+			// Open search modal from tree
+			m.showSearch = true
+			m.searchQuery = ""
+			m.searchType = "filename"
+			m.inFileSearch = false
+			return m, func() tea.Msg { return m.performSearch() }
 		case "esc":
 			// Clear search
 			m.search = ""
@@ -506,24 +577,37 @@ func (m SimpleModel) View() string {
 		return "Loading..."
 	}
 
+	// Search modal overlay (works in all views)
+	if m.showSearch && !m.inFileSearch {
+		base := ""
+		switch m.viewMode {
+		case ViewHome:
+			base = m.renderHome()
+		case ViewFullNote:
+			base = m.renderFullNote()
+		default:
+			base = m.renderTreeYazi()
+		}
+		return m.renderWithSearchModal(base)
+	}
+
 	switch m.viewMode {
 	case ViewHome:
 		return m.renderHome()
 	case ViewFullNote:
-		base := m.renderFullNote()
-		// Overlay search modal if active
-		if m.showSearch {
-			return m.renderWithSearchModal(base)
+		// In-file search modal
+		if m.showSearch && m.inFileSearch {
+			return m.renderWithInFileSearch()
 		}
 		// Overlay tree modal if active
 		if m.showTree {
-			return m.renderWithTreeModal(base)
+			return m.renderWithTreeModal(m.renderFullNote())
 		}
 		// Render split view if active
 		if m.splitMode != "" && m.splitNote != nil {
 			return m.renderSplitView()
 		}
-		return base
+		return m.renderFullNote()
 	default:
 		return m.renderTreeYazi()
 	}
@@ -1181,4 +1265,80 @@ func (m SimpleModel) renderNoteInBox(note *domain.Note, width, height int) strin
 		Width(width).
 		Height(height).
 		Render(s.String())
+}
+
+
+func (m SimpleModel) renderWithInFileSearch() string {
+	// Search within current note
+	var matches []int
+	query := strings.ToLower(m.searchQuery)
+	
+	for i, line := range m.contentLines {
+		if strings.Contains(strings.ToLower(line), query) {
+			matches = append(matches, i)
+		}
+	}
+	
+	// Render note with highlighted matches
+	var s strings.Builder
+	
+	// Title
+	s.WriteString(lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Render(m.fullNote.Title))
+	s.WriteString("\n\n")
+	
+	// Search bar
+	s.WriteString(lipgloss.NewStyle().
+		Foreground(accentColor).
+		Render(fmt.Sprintf("🔍 Search in file: %s█ (%d matches)", m.searchQuery, len(matches))))
+	s.WriteString("\n\n")
+	
+	// Show matches
+	maxLines := m.height - 10
+	for i, lineNum := range matches {
+		if i >= maxLines {
+			break
+		}
+		
+		line := m.contentLines[lineNum]
+		if len(line) > m.width-10 {
+			line = line[:m.width-10] + "..."
+		}
+		
+		// Highlight match
+		lowerLine := strings.ToLower(line)
+		idx := strings.Index(lowerLine, query)
+		if idx >= 0 {
+			before := line[:idx]
+			match := lipgloss.NewStyle().
+				Background(accentColor).
+				Foreground(lipgloss.Color("0")).
+				Render(line[idx : idx+len(query)])
+			after := line[idx+len(query):]
+			line = before + match + after
+		}
+		
+		lineStr := fmt.Sprintf("%4d: %s", lineNum+1, line)
+		if i == m.cursor && m.cursor < len(matches) {
+			lineStr = lipgloss.NewStyle().
+				Foreground(accentColor).
+				Render("▸ " + lineStr)
+		} else {
+			lineStr = "  " + lineStr
+		}
+		
+		s.WriteString(lineStr)
+		s.WriteString("\n")
+	}
+	
+	if len(matches) == 0 {
+		s.WriteString(DimItemStyle.Render("  No matches found"))
+	}
+	
+	s.WriteString("\n\n")
+	s.WriteString(HelpStyle.Render("j/k=navigate | enter=jump to line | esc=close"))
+	
+	return s.String()
 }
