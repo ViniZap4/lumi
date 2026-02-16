@@ -10,9 +10,24 @@ import (
 )
 
 func main() {
-	rootDir := os.Getenv("LUMI_NOTES_DIR")
-	if rootDir == "" {
-		rootDir = "."
+	var rootDir string
+
+	// Check command line args first
+	if len(os.Args) > 1 {
+		rootDir = os.Args[1]
+	} else {
+		// Fall back to env var
+		rootDir = os.Getenv("LUMI_NOTES_DIR")
+		if rootDir == "" {
+			// Default to current directory
+			rootDir = "."
+		}
+	}
+
+	// Verify directory exists
+	if info, err := os.Stat(rootDir); err != nil || !info.IsDir() {
+		fmt.Fprintf(os.Stderr, "Error: '%s' is not a valid directory\n", rootDir)
+		os.Exit(1)
 	}
 
 	p := tea.NewProgram(

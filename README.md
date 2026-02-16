@@ -30,7 +30,13 @@ docker-compose up -d
 ```bash
 cd tui-client
 go build -o lumi
+
+# Run with default (current directory)
 ./lumi
+
+# Run with specific path
+./lumi ../notes
+./lumi /path/to/your/notes
 ```
 
 **Keybindings:**
@@ -40,6 +46,7 @@ go build -o lumi
 - `n` - Create new note
 - `d` - Delete note
 - `g/G` - Jump to top/bottom
+- `v` - Toggle preview (off/partial/full)
 - `tab` - Switch panels
 - `q` - Quit
 
