@@ -442,7 +442,10 @@
     font-family: monospace;
     font-size: 0.75rem;
     line-height: 1.2;
-    color: #fbbf24;
+    background: linear-gradient(135deg, #c084fc 0%, #e879f9 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
     font-weight: bold;
     white-space: pre;
     margin-bottom: 2rem;
