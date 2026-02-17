@@ -494,7 +494,6 @@
     font-size: 1rem;
     text-transform: none;
   }
-  }
 
   .col-content {
     flex: 1;
