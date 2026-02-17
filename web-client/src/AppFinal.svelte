@@ -107,7 +107,7 @@
     }
   }
 
-  function handleKey(e) {
+  async function handleKey(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     
     // Home view
