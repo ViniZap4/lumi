@@ -153,11 +153,6 @@
     }
 
     // Tree view
-        e.preventDefault();
-        if (searchCursor > 0) searchCursor--;
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-    // Tree view
     if (viewMode === 'tree') {
       if (e.key === '/') {
         e.preventDefault();
