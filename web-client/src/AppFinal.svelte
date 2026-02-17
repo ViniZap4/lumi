@@ -108,6 +108,32 @@
   }
 
   async function handleKey(e) {
+    // Allow keys in search modal even when input focused
+    if (showSearch) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        showSearch = false;
+        searchQuery = '';
+        searchCursor = 0;
+        return;
+      } else if ((e.key === 'j' || e.key === 'ArrowDown') && e.ctrlKey) {
+        e.preventDefault();
+        if (searchCursor < searchResults.length - 1) searchCursor++;
+        return;
+      } else if ((e.key === 'k' || e.key === 'ArrowUp') && e.ctrlKey) {
+        e.preventDefault();
+        if (searchCursor > 0) searchCursor--;
+        return;
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (searchResults[searchCursor]) {
+          await openNote(searchResults[searchCursor]);
+          showSearch = false;
+        }
+        return;
+      }
+    }
+    
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     
     // Home view
@@ -126,29 +152,11 @@
       return;
     }
 
-    // Search modal
-    if (showSearch) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        showSearch = false;
-        searchQuery = '';
-        searchCursor = 0;
-      } else if ((e.key === 'j' || e.key === 'ArrowDown') && e.ctrlKey) {
-        e.preventDefault();
-        if (searchCursor < searchResults.length - 1) searchCursor++;
-      } else if ((e.key === 'k' || e.key === 'ArrowUp') && e.ctrlKey) {
+    // Tree view
         e.preventDefault();
         if (searchCursor > 0) searchCursor--;
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        if (searchResults[searchCursor]) {
-          await openNote(searchResults[searchCursor]);
-          showSearch = false;
-        }
-      }
-      return;
-    }
-
     // Tree view
     if (viewMode === 'tree') {
       if (e.key === '/') {
@@ -485,11 +493,12 @@
   }
 
   .center-col .col-header {
-    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    background: linear-gradient(135deg, #c084fc 0%, #e879f9 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     font-size: 1rem;
     text-transform: none;
+  }
   }
 
   .col-content {
@@ -621,7 +630,7 @@
     color: #d4d4d4;
   }
 
-  .preview-content-note :global(h1) { color: #fbbf24; font-size: 2em; margin: 1em 0 0.5em; font-weight: 700; }
+  .preview-content-note :global(h1) { display: none; } /* Hide title in preview */
   .preview-content-note :global(h2) { color: #60a5fa; font-size: 1.5em; margin: 1em 0 0.5em; font-weight: 600; }
   .preview-content-note :global(h3) { color: #34d399; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
   .preview-content-note :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
@@ -630,6 +639,19 @@
   .note-title-display {
     flex: 1;
     font-size: 1.375rem;
+    font-weight: 600;
+    color: #c084fc; /* Purple-pink */
+  }
+
+  /* Animations for mode transitions */
+  .note-view-split, .note-view-full {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
     font-weight: 600;
     color: #fbbf24;
   }
@@ -799,7 +821,7 @@
   .modal-title {
     font-size: 1.5rem;
     font-weight: 700;
-    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    background: linear-gradient(135deg, #c084fc 0%, #e879f9 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
