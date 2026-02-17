@@ -186,9 +186,21 @@
           viewMode = 'tree';
           selectedNote = null;
         }
+      } else if (e.key === 'h') {
+        e.preventDefault();
+        viewMode = 'home';
+        selectedNote = null;
       } else if (e.key === 'e' && !editMode) {
         e.preventDefault();
         editMode = true;
+      } else if (e.key === 'j' && !editMode) {
+        e.preventDefault();
+        const content = document.querySelector('.note-view-content');
+        if (content) content.scrollBy(0, 40);
+      } else if (e.key === 'k' && !editMode) {
+        e.preventDefault();
+        const content = document.querySelector('.note-view-content');
+        if (content) content.scrollBy(0, -40);
       } else if (e.key === '/') {
         e.preventDefault();
         showSearch = true;
@@ -232,7 +244,6 @@
     <div class="home-keys">
       <div>/  Search notes</div>
       <div>t  Browse tree</div>
-      <div>q  Quit</div>
     </div>
   </div>
 {/if}
@@ -332,7 +343,7 @@
       <div class="note-view-content">
         {@html renderMarkdown(content || '')}
       </div>
-      <div class="note-help">e=edit | /=search | esc=back</div>
+      <div class="note-help">jk=scroll | e=edit | h=home | esc=back</div>
     </div>
   {/if}
 {/if}
@@ -671,7 +682,7 @@
     line-height: 1.8;
   }
 
-  .note-view-content :global(h1) { color: #fbbf24; font-size: 2em; margin: 1em 0 0.5em; font-weight: 700; }
+  .note-view-content :global(h1) { display: none; } /* Hide title in content */
   .note-view-content :global(h2) { color: #60a5fa; font-size: 1.5em; margin: 1em 0 0.5em; font-weight: 600; }
   .note-view-content :global(h3) { color: #34d399; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
   .note-view-content :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
