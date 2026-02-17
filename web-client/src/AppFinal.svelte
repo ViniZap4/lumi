@@ -283,58 +283,55 @@
 
 <!-- Note View -->
 {#if viewMode === 'note' && selectedNote}
-  <div class="note-view-split">
-    <!-- Left: Content (view or edit) -->
-    <div class="note-editor">
-      <div class="note-header">
-        <div class="note-title-display">{title || 'Untitled'}</div>
-        <div class="note-actions">
-          {#if editMode}
+  {#if editMode}
+    <!-- Edit Mode: Split view with preview -->
+    <div class="note-view-split">
+      <div class="note-editor">
+        <div class="note-header">
+          <input 
+            bind:value={title} 
+            placeholder="Title"
+            class="note-title-input-header"
+          />
+          <div class="note-actions">
             <button on:click={save} disabled={saving}>
               {saving ? 'Saving...' : 'Save'}
             </button>
             <button on:click={() => editMode = false}>View (esc)</button>
-          {:else}
-            <button on:click={() => editMode = true}>Edit (e)</button>
-            <button on:click={() => viewMode = 'tree'}>Back (esc)</button>
-          {/if}
+          </div>
         </div>
-      </div>
-      <div class="note-content">
-        {#if editMode}
-          <input 
-            bind:value={title} 
-            placeholder="Title"
-            class="note-title-input"
-          />
+        <div class="note-content">
           <textarea 
             bind:value={content}
             placeholder="Write your note..."
           ></textarea>
-        {:else}
-          <div class="note-view-content">
-            {@html renderMarkdown(content || '')}
-          </div>
-        {/if}
+        </div>
+        <div class="note-help">ctrl+s=save | esc=view</div>
       </div>
-      <div class="note-help">
-        {#if editMode}
-          ctrl+s=save | esc=view
-        {:else}
-          e=edit | /=search | esc=back
-        {/if}
+      
+      <div class="note-preview">
+        <div class="preview-header-note">Live Preview</div>
+        <div class="preview-content-note">
+          {@html renderMarkdown(content || '')}
+        </div>
       </div>
     </div>
-    
-    <!-- Right: Live Preview -->
-    
-    <div class="note-preview">
-      <div class="preview-header-note">Live Preview</div>
-      <div class="preview-content-note">
+  {:else}
+    <!-- View Mode: Full width -->
+    <div class="note-view-full">
+      <div class="note-header">
+        <div class="note-title-display">{title || 'Untitled'}</div>
+        <div class="note-actions">
+          <button on:click={() => editMode = true}>Edit (e)</button>
+          <button on:click={() => viewMode = 'tree'}>Back (esc)</button>
+        </div>
+      </div>
+      <div class="note-view-content">
         {@html renderMarkdown(content || '')}
       </div>
+      <div class="note-help">e=edit | /=search | esc=back</div>
     </div>
-  </div>
+  {/if}
 {/if}
 
 <!-- Search Modal -->
@@ -582,6 +579,17 @@
     animation: fadeIn 0.4s ease-out;
   }
 
+  /* Note View - Full Width (View Mode) */
+  .note-view-full {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    background: #000;
+    color: #e5e5e5;
+    animation: fadeIn 0.4s ease-out;
+  }
+
   .note-editor {
     display: flex;
     flex-direction: column;
@@ -661,6 +669,25 @@
     gap: 1rem;
     padding: 2rem 2.5rem 1.5rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    align-items: center;
+  }
+
+  .note-title-input-header {
+    flex: 1;
+    padding: 0.875rem 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: #e5e5e5;
+    font-size: 1.375rem;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .note-title-input-header:focus {
+    outline: none;
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.1);
   }
 
   .note-title {
