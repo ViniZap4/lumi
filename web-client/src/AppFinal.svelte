@@ -646,9 +646,6 @@
     from { opacity: 0; }
     to { opacity: 1; }
   }
-    font-weight: 600;
-    color: #fbbf24;
-  }
 
   .note-title-input {
     width: 100%;
