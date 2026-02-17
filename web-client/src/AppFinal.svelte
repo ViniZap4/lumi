@@ -3,6 +3,7 @@
   import { getNotes, getFolders, getNote, updateNote } from './lib/api.js';
 
   let viewMode = 'home'; // 'home', 'tree', 'note'
+  let editMode = false; // false = view only, true = edit
   let allNotes = [];
   let allFolders = [];
   let displayItems = [];
@@ -87,6 +88,7 @@
       title = note.title || '';
       content = note.content || '';
       viewMode = 'note';
+      editMode = false; // Start in view mode
     } catch (err) {
       error = `Failed to open: ${err.message}`;
     }
@@ -137,10 +139,10 @@
       } else if ((e.key === 'k' || e.key === 'ArrowUp') && e.ctrlKey) {
         e.preventDefault();
         if (searchCursor > 0) searchCursor--;
-      } else if (e.key === 'Enter' && !e.target.matches('input')) {
+      } else if (e.key === 'Enter') {
         e.preventDefault();
         if (searchResults[searchCursor]) {
-          openNote(searchResults[searchCursor]);
+          await openNote(searchResults[searchCursor]);
           showSearch = false;
         }
       }
@@ -175,8 +177,15 @@
     if (viewMode === 'note') {
       if (e.key === 'Escape') {
         e.preventDefault();
-        viewMode = 'tree';
-        selectedNote = null;
+        if (editMode) {
+          editMode = false; // Exit edit mode first
+        } else {
+          viewMode = 'tree';
+          selectedNote = null;
+        }
+      } else if (e.key === 'e' && !editMode) {
+        e.preventDefault();
+        editMode = true;
       } else if (e.key === '/') {
         e.preventDefault();
         showSearch = true;
@@ -275,28 +284,49 @@
 <!-- Note View -->
 {#if viewMode === 'note' && selectedNote}
   <div class="note-view-split">
+    <!-- Left: Content (view or edit) -->
     <div class="note-editor">
       <div class="note-header">
-        <input 
-          bind:value={title} 
-          placeholder="Title"
-          class="note-title"
-        />
+        <div class="note-title-display">{title || 'Untitled'}</div>
         <div class="note-actions">
-          <button on:click={save} disabled={saving}>
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-          <button on:click={() => viewMode = 'tree'}>Back (esc)</button>
+          {#if editMode}
+            <button on:click={save} disabled={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+            <button on:click={() => editMode = false}>View (esc)</button>
+          {:else}
+            <button on:click={() => editMode = true}>Edit (e)</button>
+            <button on:click={() => viewMode = 'tree'}>Back (esc)</button>
+          {/if}
         </div>
       </div>
       <div class="note-content">
-        <textarea 
-          bind:value={content}
-          placeholder="Write your note..."
-        ></textarea>
+        {#if editMode}
+          <input 
+            bind:value={title} 
+            placeholder="Title"
+            class="note-title-input"
+          />
+          <textarea 
+            bind:value={content}
+            placeholder="Write your note..."
+          ></textarea>
+        {:else}
+          <div class="note-view-content">
+            {@html renderMarkdown(content || '')}
+          </div>
+        {/if}
       </div>
-      <div class="note-help">/=search | ctrl+s=save | esc=back</div>
+      <div class="note-help">
+        {#if editMode}
+          ctrl+s=save | esc=view
+        {:else}
+          e=edit | /=search | esc=back
+        {/if}
+      </div>
     </div>
+    
+    <!-- Right: Live Preview -->
     
     <div class="note-preview">
       <div class="preview-header-note">Live Preview</div>
@@ -588,6 +618,43 @@
   .preview-content-note :global(h3) { color: #34d399; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
   .preview-content-note :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
   .preview-content-note :global(.wiki-link) { color: #60a5fa; text-decoration: underline; }
+
+  .note-title-display {
+    flex: 1;
+    font-size: 1.375rem;
+    font-weight: 600;
+    color: #fbbf24;
+  }
+
+  .note-title-input {
+    width: 100%;
+    padding: 0.875rem 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: #e5e5e5;
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+  }
+
+  .note-title-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.1);
+  }
+
+  .note-view-content {
+    padding: 2.5rem;
+    overflow-y: auto;
+    line-height: 1.8;
+  }
+
+  .note-view-content :global(h1) { color: #fbbf24; font-size: 2em; margin: 1em 0 0.5em; font-weight: 700; }
+  .note-view-content :global(h2) { color: #60a5fa; font-size: 1.5em; margin: 1em 0 0.5em; font-weight: 600; }
+  .note-view-content :global(h3) { color: #34d399; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
+  .note-view-content :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
+  .note-view-content :global(.wiki-link) { color: #60a5fa; text-decoration: underline; }
 
   .note-header {
     display: flex;
