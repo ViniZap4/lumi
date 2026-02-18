@@ -32,7 +32,7 @@ func main() {
 
 	p := tea.NewProgram(
 		ui.NewSimpleModel(rootDir),
-		tea.WithAltScreen(),
+		// Removed tea.WithAltScreen() to allow inline images
 	)
 
 	if _, err := p.Run(); err != nil {

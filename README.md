@@ -6,6 +6,7 @@ A local-first, Markdown-based note-taking system with beautiful TUI and web clie
 
 ### TUI (Terminal)
 - **Glamour Rendering** - Beautiful markdown with syntax highlighting
+- **Image Support** - Inline images via Kitty graphics protocol
 - **Cursor Navigation** - Character-by-character movement (hjkl, 0/$, g/G)
 - **Visual Mode** - Select text and copy to system clipboard (v, y)
 - **Link Following** - Press enter on [[wiki-links]] to open

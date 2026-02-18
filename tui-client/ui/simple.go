@@ -16,6 +16,7 @@ import (
 	"github.com/vinizap/lumi/tui-client/domain"
 	"github.com/vinizap/lumi/tui-client/editor"
 	"github.com/vinizap/lumi/tui-client/filesystem"
+	"github.com/vinizap/lumi/tui-client/image"
 )
 
 // Simple model - home, tree (3-column), and full view with cursor
@@ -952,6 +953,18 @@ func (m SimpleModel) renderFullNote() string {
 
 // Simple markdown styling
 func (m SimpleModel) styleMarkdownLine(line string) string {
+	// Images
+	if image.HasImage(line) {
+		imgPath := image.ExtractImagePath(line)
+		if !filepath.IsAbs(imgPath) {
+			imgPath = filepath.Join(filepath.Dir(m.fullNote.Path), imgPath)
+		}
+		if _, err := os.Stat(imgPath); err == nil {
+			return image.Render(imgPath, m.width-4)
+		}
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(fmt.Sprintf("[Image not found: %s]", imgPath))
+	}
+	
 	// Headers
 	if strings.HasPrefix(line, "# ") {
 		return lipgloss.NewStyle().
