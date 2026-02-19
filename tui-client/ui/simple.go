@@ -50,6 +50,11 @@ type SimpleModel struct {
 	searchResults []Item
 	inFileSearch bool // true when searching within current note
 	
+	// Input modal for create/rename
+	showInput    bool
+	inputMode    string // "create", "rename"
+	inputValue   string
+	
 	// Split view
 	activeSplit  int // 0 = main, 1 = split
 }
@@ -208,6 +213,45 @@ type itemsLoadedMsg struct {
 func (m SimpleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Input modal (highest priority)
+		if m.showInput {
+			switch msg.String() {
+			case "esc":
+				m.showInput = false
+				m.inputValue = ""
+				return m, nil
+			case "enter":
+				if m.inputMode == "create" && m.inputValue != "" {
+					if _, err := filesystem.CreateNote(m.currentDir, m.inputValue); err == nil {
+						m.showInput = false
+						m.inputValue = ""
+						return m, m.loadItems
+					}
+				} else if m.inputMode == "rename" && m.inputValue != "" && m.cursor < len(m.items) {
+					if m.items[m.cursor].Note != nil {
+						if err := filesystem.RenameNote(m.items[m.cursor].Note, m.inputValue); err == nil {
+							m.showInput = false
+							m.inputValue = ""
+							return m, m.loadItems
+						}
+					}
+				}
+				m.showInput = false
+				m.inputValue = ""
+				return m, nil
+			case "backspace":
+				if len(m.inputValue) > 0 {
+					m.inputValue = m.inputValue[:len(m.inputValue)-1]
+				}
+				return m, nil
+			default:
+				if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
+					m.inputValue += msg.String()
+				}
+				return m, nil
+			}
+		}
+		
 		// Home view
 		if m.viewMode == ViewHome {
 			// Handle search modal if open
@@ -748,6 +792,34 @@ default_search_type: filename
 					m.colCursor = 0
 				}
 			}
+		case "n":
+			// Create new note
+			m.showInput = true
+			m.inputMode = "create"
+			m.inputValue = ""
+			return m, nil
+		case "d":
+			// Delete note
+			if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
+				if err := filesystem.DeleteNote(m.items[m.cursor].Note); err == nil {
+					return m, m.loadItems
+				}
+			}
+		case "r":
+			// Rename note
+			if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
+				m.showInput = true
+				m.inputMode = "rename"
+				m.inputValue = m.items[m.cursor].Note.Title
+				return m, nil
+			}
+		case "D":
+			// Duplicate note
+			if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
+				if _, err := filesystem.DuplicateNote(m.items[m.cursor].Note); err == nil {
+					return m, m.loadItems
+				}
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -768,6 +840,20 @@ default_search_type: filename
 func (m SimpleModel) View() string {
 	if m.width == 0 {
 		return "Loading..."
+	}
+
+	// Input modal overlay (highest priority)
+	if m.showInput {
+		base := ""
+		switch m.viewMode {
+		case ViewHome:
+			base = m.renderHome()
+		case ViewFullNote:
+			base = m.renderFullNote()
+		default:
+			base = m.renderTreeYazi()
+		}
+		return m.renderWithInputModal(base)
 	}
 
 	// Search modal overlay (works in all views)
@@ -1646,6 +1732,41 @@ func (m SimpleModel) renderNoteInBox(note *domain.Note, width, height int) strin
 		Render(s.String())
 }
 
+func (m SimpleModel) renderWithInputModal(base string) string {
+	title := "Create Note"
+	if m.inputMode == "rename" {
+		title = "Rename Note"
+	}
+	
+	modalWidth := 60
+	modalHeight := 7
+	
+	var s strings.Builder
+	s.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("226")).Render(title))
+	s.WriteString("\n\n")
+	s.WriteString("Title: ")
+	s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Render(m.inputValue + "█"))
+	s.WriteString("\n\n")
+	s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Enter to confirm • Esc to cancel"))
+	
+	modal := lipgloss.NewStyle().
+		Width(modalWidth).
+		Height(modalHeight).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Render(s.String())
+	
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		modal,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
 
 func (m SimpleModel) renderWithInFileSearch() string {
 	// Search within current note
