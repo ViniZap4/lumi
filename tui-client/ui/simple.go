@@ -947,7 +947,7 @@ func (m SimpleModel) renderTree() string {
 
 	// Help
 	s.WriteString("\n")
-	help := HelpStyle.Render("hjkl=move | enter=open | /=search | esc=back | q=quit")
+	help := HelpStyle.Render("hjkl=move | enter=open | n=new | r=rename | d=delete | D=duplicate | /=search | esc=back | q=quit")
 	s.WriteString(help)
 
 	return s.String()
@@ -1346,7 +1346,7 @@ func (m SimpleModel) renderTreeYazi() string {
 
 	// Help
 	s.WriteString("\n")
-	help := HelpStyle.Render("hjkl=move | enter=open | /=search | esc=back | q=quit")
+	help := HelpStyle.Render("hjkl=move | enter=open | n=new | r=rename | d=delete | D=duplicate | /=search | esc=back | q=quit")
 	s.WriteString(help)
 
 	return s.String()
