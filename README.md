@@ -6,7 +6,7 @@ A local-first, Markdown-based note-taking system with beautiful TUI and web clie
 
 ### TUI (Terminal)
 - **Glamour Rendering** - Beautiful markdown with syntax highlighting
-- **Image Support** - Inline images via Kitty graphics protocol
+- **Image Support** - Inline images via sixel/Unicode (timg/chafa/viu)
 - **Cursor Navigation** - Character-by-character movement (hjkl, 0/$, g/G)
 - **Visual Mode** - Select text and copy to system clipboard (v, y)
 - **Link Following** - Press enter on [[wiki-links]] to open
@@ -50,6 +50,11 @@ docker-compose up -d
 cd tui-client
 go build -o lumi
 ./lumi ../notes
+```
+
+**Dependencies (optional for image support):**
+```bash
+brew install timg  # or chafa, or viu
 ```
 
 **Key Bindings:**
