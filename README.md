@@ -60,6 +60,10 @@ brew install timg  # or chafa, or viu
 **Key Bindings:**
 - `hjkl` - Navigate / move cursor
 - `enter` - Open note / follow link
+- `n` - Create new note
+- `r` - Rename note
+- `d` - Delete note
+- `D` - Duplicate note
 - `v` - Visual mode
 - `y` - Copy (in visual mode)
 - `t` - Tree modal (file switcher)
