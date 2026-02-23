@@ -56,17 +56,15 @@ func (m Model) updateHomeSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchType = "filename"
 		}
 		return m, func() tea.Msg { return m.performSearch() }
-	case "j", "down":
+	case "down":
 		if m.cursor < len(m.searchResults)-1 {
 			m.cursor++
 		}
 		return m, nil
-	case "k", "up":
+	case "up":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-		return m, nil
-	case "h", "l":
 		return m, nil
 	case "enter":
 		if m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {

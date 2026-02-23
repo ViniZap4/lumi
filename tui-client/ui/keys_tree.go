@@ -100,11 +100,11 @@ func (m Model) updateTreeSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchType = "filename"
 		}
 		return m, func() tea.Msg { return m.performSearch() }
-	case "j", "down":
+	case "down":
 		if m.cursor < len(m.searchResults)-1 {
 			m.cursor++
 		}
-	case "k", "up":
+	case "up":
 		if m.cursor > 0 {
 			m.cursor--
 		}

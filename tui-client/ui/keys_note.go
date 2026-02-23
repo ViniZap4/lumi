@@ -236,37 +236,19 @@ func (m Model) updateNoteGlobalSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchType = "filename"
 		}
 		return m, func() tea.Msg { return m.performSearch() }
-	case "j", "down":
+	case "down":
 		if m.cursor < len(m.searchResults)-1 {
 			m.cursor++
 		}
 		return m, nil
-	case "k", "up":
+	case "up":
 		if m.cursor > 0 {
 			m.cursor--
 		}
 		return m, nil
-	case "h", "l":
-		return m, nil
 	case "enter":
 		if m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
 			m.openNote(m.searchResults[m.cursor].Note)
-			m.showSearch = false
-			m.cursor = 0
-		}
-		return m, nil
-	case "s":
-		if m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
-			m.splitMode = "horizontal"
-			m.splitNote = m.searchResults[m.cursor].Note
-			m.showSearch = false
-			m.cursor = 0
-		}
-		return m, nil
-	case "S":
-		if m.cursor < len(m.searchResults) && m.searchResults[m.cursor].Note != nil {
-			m.splitMode = "vertical"
-			m.splitNote = m.searchResults[m.cursor].Note
 			m.showSearch = false
 			m.cursor = 0
 		}
@@ -293,12 +275,12 @@ func (m Model) updateInFileSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchQuery = ""
 		m.cursor = 0
 		return m, nil
-	case "j", "down":
+	case "down":
 		matches := m.findInFileMatches()
 		if m.cursor < len(matches)-1 {
 			m.cursor++
 		}
-	case "k", "up":
+	case "up":
 		if m.cursor > 0 {
 			m.cursor--
 		}

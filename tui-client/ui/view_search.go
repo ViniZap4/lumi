@@ -130,7 +130,7 @@ func (m Model) renderWithSearchModal(base string) string {
 	}
 
 	modal.WriteString("\n")
-	modal.WriteString(HelpStyle.Render("ctrl+f=toggle | enter=open | s=split-h | S=split-v | esc=close"))
+	modal.WriteString(HelpStyle.Render("ctrl+f=toggle | ↑↓=navigate | enter=open | esc=close"))
 
 	modalBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -212,7 +212,7 @@ func (m Model) renderWithInFileSearch() string {
 	}
 
 	s.WriteString("\n\n")
-	s.WriteString(HelpStyle.Render("j/k=navigate | enter=jump to line | esc=close"))
+	s.WriteString(HelpStyle.Render("↑↓=navigate | enter=jump to line | esc=close"))
 
 	return s.String()
 }
