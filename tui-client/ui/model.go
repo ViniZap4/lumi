@@ -10,7 +10,8 @@ import (
 type ViewMode int
 
 const (
-	ViewTree     ViewMode = iota // file browser (default)
+	ViewHome     ViewMode = iota // animated splash
+	ViewTree                     // file browser (3-column)
 	ViewFullNote                 // reading a note
 )
 
@@ -43,14 +44,18 @@ type Model struct {
 	viewMode   ViewMode
 	renderer   *glamour.TermRenderer
 
+	// Home animation
+	animPos   int  // how many characters of the logo have been revealed
+	animDone  bool // animation finished
+
 	// Note view state
 	fullNote      *domain.Note
-	contentLines  []string  // raw markdown lines
-	renderedView  string    // glamour-rendered output
-	renderedLines []string  // rendered output split into lines
+	contentLines  []string
+	renderedView  string
+	renderedLines []string
 	lineCursor    int
 	colCursor     int
-	desiredCol    int // sticky column for vertical movement (like vim)
+	desiredCol    int
 
 	// Visual mode
 	visualMode     VisualModeType
@@ -60,27 +65,27 @@ type Model struct {
 	visualEndCol   int
 
 	// Modals
-	showNav    bool // navigation modal (file browser overlay on note view)
+	showNav    bool
 	showSearch bool
 	showInput  bool
 
-	// Navigation modal state (separate cursor from main tree)
+	// Navigation modal state (own cursor, dir, items)
 	navCursor int
 	navDir    string
 	navItems  []Item
 
 	// Split view
-	splitMode string // "", "horizontal", "vertical"
+	splitMode string
 	splitNote *domain.Note
 
 	// Search state
 	searchQuery   string
-	searchType    string // "content" or "filename"
+	searchType    string
 	searchResults []Item
 	inFileSearch  bool
 
 	// Input modal
-	inputMode  string // "create", "rename"
+	inputMode  string
 	inputValue string
 }
 
@@ -98,7 +103,7 @@ func NewModel(rootDir string) Model {
 		currentDir: rootDir,
 		navDir:     rootDir,
 		items:      []Item{},
-		viewMode:   ViewTree,
+		viewMode:   ViewHome,
 		renderer:   renderer,
 		searchType: cfg.SearchType,
 	}

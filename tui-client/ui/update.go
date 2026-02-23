@@ -1,9 +1,22 @@
 package ui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// animTickMsg drives the home screen animation.
+type animTickMsg time.Time
+
+func animTick() tea.Cmd {
+	return tea.Tick(18*time.Millisecond, func(t time.Time) tea.Msg {
+		return animTickMsg(t)
+	})
+}
 
 func (m Model) Init() tea.Cmd {
-	return m.loadItems
+	return tea.Batch(m.loadItems, animTick())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -13,6 +26,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		if m.fullNote != nil {
 			m.renderMarkdown()
+		}
+		return m, nil
+
+	case animTickMsg:
+		if m.viewMode == ViewHome && !m.animDone {
+			m.animPos += 2
+			if m.animPos >= len(logoFull) {
+				m.animPos = len(logoFull)
+				m.animDone = true
+				return m, nil
+			}
+			return m, animTick()
 		}
 		return m, nil
 
@@ -35,6 +60,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch m.viewMode {
+		case ViewHome:
+			return m.updateHome(msg)
 		case ViewTree:
 			return m.updateTree(msg)
 		case ViewFullNote:

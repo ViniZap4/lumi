@@ -1,13 +1,9 @@
 package ui
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vinizap/lumi/tui-client/config"
 	"github.com/vinizap/lumi/tui-client/filesystem"
 )
 
@@ -19,6 +15,9 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		m.viewMode = ViewHome
+		return m, nil
 	case "/":
 		m.showSearch = true
 		m.searchQuery = ""
@@ -130,33 +129,3 @@ func (m Model) updateTreeSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) openConfig() tea.Cmd {
-	configDir := filepath.Join(os.Getenv("HOME"), ".config", "lumi")
-	configPath := filepath.Join(configDir, "config.yaml")
-
-	os.MkdirAll(configDir, 0755)
-
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		defaultConfig := strings.Join([]string{
-			"# Lumi Configuration",
-			"",
-			"# Editor command with args",
-			"editor: nvim",
-			"",
-			"# Theme (dark or light)",
-			"theme: dark",
-			"",
-			"# TUI Settings",
-			"show_line_numbers: false",
-			"cursor_style: block",
-			"preview_lines: 10",
-			"default_search_type: filename",
-			"",
-		}, "\n")
-		os.WriteFile(configPath, []byte(defaultConfig), 0644)
-	}
-
-	cfg := config.Load()
-	args := append(cfg.EditorArgs, configPath)
-	return tea.ExecProcess(exec.Command(cfg.Editor, args...), nil)
-}

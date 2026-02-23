@@ -11,12 +11,11 @@ import (
 	"github.com/vinizap/lumi/tui-client/filesystem"
 )
 
-// renderWithNavModal renders the navigation overlay on top of the note view.
+// renderWithNavModal renders a 3-column navigation modal (parent | current | preview)
+// overlaid on top of the note view — the same layout as the main tree browser.
 func (m Model) renderWithNavModal(base string) string {
-	modalWidth := min(m.width-6, 90)
-	modalHeight := min(m.height-4, 30)
-
-	var modal strings.Builder
+	modalWidth := min(m.width-4, 110)
+	modalInner := modalWidth - 6 // padding + border
 
 	// Path header
 	navPath := strings.TrimPrefix(m.navDir, m.rootDir)
@@ -26,115 +25,47 @@ func (m Model) renderWithNavModal(base string) string {
 		navPath = "~" + navPath
 	}
 
-	parentInfo := ""
+	var header strings.Builder
+	header.WriteString(lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Render(" " + navPath))
 	if m.navDir != m.rootDir {
 		parentName := filepath.Base(filepath.Dir(m.navDir))
 		if filepath.Dir(m.navDir) == m.rootDir {
 			parentName = "~"
 		}
-		parentInfo = lipgloss.NewStyle().
+		header.WriteString(lipgloss.NewStyle().
 			Foreground(mutedColor).
-			Render("  <- " + parentName)
+			Render("  <- " + parentName))
 	}
 
-	modal.WriteString(lipgloss.NewStyle().
-		Bold(true).
-		Foreground(primaryColor).
-		Render(" " + navPath + parentInfo))
-	modal.WriteString("\n")
-	modal.WriteString(lipgloss.NewStyle().
-		Foreground(lipgloss.Color("236")).
-		Render(strings.Repeat("-", modalWidth-6)))
-	modal.WriteString("\n")
-
-	// Items list with scrolling
-	listHeight := modalHeight - 8
-	if listHeight < 4 {
-		listHeight = 4
+	// Column dimensions
+	leftW := modalInner / 4
+	centerW := modalInner / 3
+	rightW := modalInner - leftW - centerW - 6 // separators
+	colHeight := min(m.height-10, 20)
+	if colHeight < 6 {
+		colHeight = 6
 	}
 
-	items := m.navItems
-	start := 0
-	if m.navCursor >= listHeight {
-		start = m.navCursor - listHeight + 1
-	}
+	// Build the three columns
+	leftCol := m.navParentCol(leftW, colHeight)
+	centerCol := m.navCenterCol(centerW, colHeight)
+	rightCol := m.navPreviewCol(rightW, colHeight)
 
-	count := 0
-	for i := start; i < len(items) && count < listHeight; i++ {
-		item := items[i]
-		name := item.Name
-		if item.IsFolder {
-			name += "/"
-		}
+	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(" | ")
 
-		if i == m.navCursor {
-			line := lipgloss.NewStyle().
-				Foreground(accentColor).
-				Background(selectedBg).
-				Bold(true).
-				Width(modalWidth - 8).
-				Render(" > " + name)
-			modal.WriteString(line)
-		} else {
-			modal.WriteString(lipgloss.NewStyle().
-				Width(modalWidth - 8).
-				Render("   " + name))
-		}
-		modal.WriteString("\n")
-		count++
-	}
+	columns := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		leftCol,
+		sep,
+		centerCol,
+		sep,
+		rightCol,
+	)
 
-	if len(items) == 0 {
-		modal.WriteString(DimItemStyle.Render("   (empty)"))
-		modal.WriteString("\n")
-	}
-
-	// Preview for selected note
-	if m.navCursor >= 0 && m.navCursor < len(items) {
-		item := items[m.navCursor]
-		if item.Note != nil {
-			modal.WriteString("\n")
-			modal.WriteString(lipgloss.NewStyle().
-				Foreground(lipgloss.Color("236")).
-				Render(strings.Repeat("-", modalWidth-6)))
-			modal.WriteString("\n")
-
-			modal.WriteString(lipgloss.NewStyle().
-				Foreground(secondaryColor).
-				Bold(true).
-				Render(" " + item.Note.Title))
-			modal.WriteString("\n")
-
-			previewLines := strings.Split(item.Note.Content, "\n")
-			maxPreview := 4
-			for i := 0; i < min(len(previewLines), maxPreview); i++ {
-				line := previewLines[i]
-				if len(line) > modalWidth-8 {
-					line = line[:modalWidth-11] + "..."
-				}
-				modal.WriteString(lipgloss.NewStyle().
-					Foreground(mutedColor).
-					Render(" " + line))
-				modal.WriteString("\n")
-			}
-		} else if item.IsFolder {
-			modal.WriteString("\n")
-			notes, _ := filesystem.ListNotes(item.Path)
-			folders, _ := filesystem.ListFolders(item.Path)
-			modal.WriteString(lipgloss.NewStyle().
-				Foreground(mutedColor).
-				Render(lipgloss.NewStyle().
-					Foreground(lipgloss.Color("236")).
-					Render(strings.Repeat("-", modalWidth-6)) + "\n"))
-			modal.WriteString(lipgloss.NewStyle().
-				Foreground(mutedColor).
-				Render(renderItemCount(len(folders), len(notes))))
-			modal.WriteString("\n")
-		}
-	}
-
-	// Help
-	modal.WriteString("\n")
+	// Help bar
 	helpParts := []struct{ key, desc string }{
 		{"hjkl", "navigate"},
 		{"enter", "open"},
@@ -147,7 +78,19 @@ func (m Model) renderWithNavModal(base string) string {
 		desc := lipgloss.NewStyle().Foreground(mutedColor).Render(" " + h.desc)
 		parts = append(parts, key+desc)
 	}
-	modal.WriteString(strings.Join(parts, "  "))
+	helpLine := strings.Join(parts, "  ")
+
+	// Assemble modal content
+	var modal strings.Builder
+	modal.WriteString(header.String())
+	modal.WriteString("\n")
+	modal.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("236")).
+		Render(strings.Repeat("-", modalInner)))
+	modal.WriteString("\n")
+	modal.WriteString(columns)
+	modal.WriteString("\n")
+	modal.WriteString(helpLine)
 
 	modalBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -167,26 +110,177 @@ func (m Model) renderWithNavModal(base string) string {
 	)
 }
 
-func renderItemCount(folders, notes int) string {
-	var parts []string
-	if folders > 0 {
-		s := "folder"
-		if folders > 1 {
-			s = "folders"
+// navParentCol renders the left column showing items in the parent directory.
+func (m Model) navParentCol(width, height int) string {
+	var s strings.Builder
+
+	if m.navDir != m.rootDir {
+		parentDir := filepath.Dir(m.navDir)
+		parentFolders, _ := filesystem.ListFolders(parentDir)
+		parentNotes, _ := filesystem.ListNotes(parentDir)
+
+		maxItems := height
+		count := 0
+
+		for _, f := range parentFolders {
+			if count >= maxItems {
+				break
+			}
+			name := f.Name
+			if f.Path == m.navDir {
+				s.WriteString(lipgloss.NewStyle().
+					Foreground(accentColor).
+					Bold(true).
+					Render(" > " + name))
+			} else {
+				s.WriteString(lipgloss.NewStyle().
+					Foreground(mutedColor).
+					Render("   " + name))
+			}
+			s.WriteString("\n")
+			count++
 		}
-		parts = append(parts, fmt.Sprintf(" %d %s", folders, s))
-	}
-	if notes > 0 {
-		s := "note"
-		if notes > 1 {
-			s = "notes"
+
+		for _, n := range parentNotes {
+			if count >= maxItems {
+				break
+			}
+			s.WriteString(lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Render("   " + n.Title))
+			s.WriteString("\n")
+			count++
 		}
-		parts = append(parts, fmt.Sprintf(" %d %s", notes, s))
 	}
-	if len(parts) == 0 {
-		return " (empty)"
+
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Render(s.String())
+}
+
+// navCenterCol renders the center column with the current navItems and navCursor.
+func (m Model) navCenterCol(width, height int) string {
+	var s strings.Builder
+
+	maxItems := height
+	start := 0
+	if m.navCursor >= maxItems {
+		start = m.navCursor - maxItems + 1
 	}
-	return strings.Join(parts, ",")
+
+	for i := start; i < len(m.navItems) && i < start+maxItems; i++ {
+		item := m.navItems[i]
+		name := item.Name
+		if item.IsFolder {
+			name += "/"
+		}
+
+		if i == m.navCursor {
+			line := lipgloss.NewStyle().
+				Foreground(accentColor).
+				Background(selectedBg).
+				Bold(true).
+				Width(width - 1).
+				Render(" > " + name)
+			s.WriteString(line)
+		} else {
+			s.WriteString(lipgloss.NewStyle().
+				Width(width - 1).
+				Render("   " + name))
+		}
+		s.WriteString("\n")
+	}
+
+	if len(m.navItems) == 0 {
+		s.WriteString(DimItemStyle.Render("   (empty)"))
+	}
+
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Render(s.String())
+}
+
+// navPreviewCol renders the right column showing a preview of the selected item.
+func (m Model) navPreviewCol(width, height int) string {
+	var s strings.Builder
+
+	if m.navCursor >= len(m.navItems) {
+		return lipgloss.NewStyle().Width(width).Height(height).Render("")
+	}
+
+	item := m.navItems[m.navCursor]
+
+	if item.IsFolder {
+		s.WriteString(lipgloss.NewStyle().
+			Foreground(secondaryColor).
+			Bold(true).
+			Render(" " + item.Name + "/"))
+		s.WriteString("\n\n")
+
+		subFolders, _ := filesystem.ListFolders(item.Path)
+		notes, _ := filesystem.ListNotes(item.Path)
+
+		if len(subFolders) > 0 || len(notes) > 0 {
+			s.WriteString(lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Render(fmt.Sprintf(" %d items", len(subFolders)+len(notes))))
+			s.WriteString("\n\n")
+
+			count := 0
+			for _, f := range subFolders {
+				if count >= height-5 {
+					break
+				}
+				s.WriteString(lipgloss.NewStyle().
+					Foreground(mutedColor).
+					Render("   " + f.Name + "/"))
+				s.WriteString("\n")
+				count++
+			}
+			for _, n := range notes {
+				if count >= height-5 {
+					break
+				}
+				s.WriteString("   " + n.Title)
+				s.WriteString("\n")
+				count++
+			}
+		} else {
+			s.WriteString(DimItemStyle.Render(" (empty folder)"))
+		}
+	} else if item.Note != nil {
+		s.WriteString(lipgloss.NewStyle().
+			Foreground(secondaryColor).
+			Bold(true).
+			Render(" " + item.Note.Title))
+		s.WriteString("\n")
+		s.WriteString(lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Render(fmt.Sprintf(" %s", item.Note.UpdatedAt.Format("Jan 2, 2006"))))
+		s.WriteString("\n")
+		s.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color("236")).
+			Render(" " + strings.Repeat("-", width-3)))
+		s.WriteString("\n")
+
+		lines := strings.Split(item.Note.Content, "\n")
+		previewLines := min(height-4, len(lines))
+		for i := 0; i < previewLines; i++ {
+			line := lines[i]
+			if len(line) > width-3 {
+				line = line[:width-6] + "..."
+			}
+			s.WriteString(" " + line)
+			s.WriteString("\n")
+		}
+	}
+
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Render(s.String())
 }
 
 func (m Model) renderWithInputModal(base string) string {
