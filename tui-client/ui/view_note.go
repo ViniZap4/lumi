@@ -11,6 +11,14 @@ import (
 	"github.com/vinizap/lumi/tui-client/theme"
 )
 
+// visualRange describes which columns of a line fall inside the visual selection.
+type visualRange struct {
+	active   bool
+	full     bool // entire line is selected (VisualLine or middle line in VisualChar)
+	startCol int  // first selected column (0-based)
+	endCol   int  // last selected column, or -1 for "to end of line"
+}
+
 func (m Model) renderFullNote() string {
 	if m.fullNote == nil {
 		return "No note loaded"
@@ -52,8 +60,6 @@ func (m Model) renderFullNote() string {
 	s.WriteString("\n")
 
 	// --- Content ---
-	// Build display lines from raw content, tracking which raw line each
-	// display line comes from. Most lines are 1:1; image lines may expand.
 	rawLines := m.contentLines
 	displayLines := make([]string, 0, len(rawLines))
 	rawToDisplay := make([]int, len(rawLines))
@@ -77,13 +83,11 @@ func (m Model) renderFullNote() string {
 		}
 	}
 
-	// Pre-compute which raw lines are inside fenced code blocks.
 	codeLines := codeBlockLines(rawLines)
 
 	maxLines := m.viewportHeight()
 	totalLines := len(displayLines)
 
-	// Exact cursor position via the map.
 	displayCursor := 0
 	if m.lineCursor >= 0 && m.lineCursor < len(rawToDisplay) {
 		displayCursor = rawToDisplay[m.lineCursor]
@@ -98,7 +102,6 @@ func (m Model) renderFullNote() string {
 	}
 	end := min(start+maxLines, totalLines)
 
-	// Reverse map: display line → owning raw line.
 	displayToRaw := func(d int) int {
 		raw := 0
 		for r, disp := range rawToDisplay {
@@ -118,32 +121,45 @@ func (m Model) renderFullNote() string {
 
 		rawIdx := displayToRaw(i)
 		inCode := codeLines[rawIdx]
-		inVisual := m.isLineInVisual(rawIdx)
 		style := mdLineStyle(line, inCode)
+		vr := m.visualRangeForLine(rawIdx)
+		isCursorLine := (i == displayCursor)
 
-		if i == displayCursor {
+		// Merge visual selection and yank flash ranges
+		yr := m.yankRangeForLine(rawIdx)
+		activeRange := vr
+		selBg := visualSelBg
+		if yr.active {
+			activeRange = yr
+			selBg = yankFlashBg
+		}
+
+		var inlineCls []int
+		if shouldClassifyInline(line, inCode) {
+			inlineCls = classifyInline(line)
+		}
+		styledLine := m.renderContentLine(line, style, inlineCls, activeRange, selBg, isCursorLine)
+
+		// Pad visual-selected lines to full width so the highlight spans the entire row.
+		if activeRange.active && activeRange.full && !isCursorLine {
+			visWidth := lipgloss.Width(styledLine)
+			pad := m.width - 2 - visWidth // 2 for prefix
+			if pad > 0 {
+				styledLine += lipgloss.NewStyle().Background(selBg).Render(strings.Repeat(" ", pad))
+			}
+		}
+
+		if isCursorLine {
 			prefix := lipgloss.NewStyle().
 				Foreground(accentColor).
 				Bold(true).
 				Render("> ")
-			styledLine := m.renderLineWithCursor(line, style)
-
-			if inVisual {
-				line = prefix + lipgloss.NewStyle().
-					Background(theme.Current.SelectedBg).
-					Render(styledLine)
-			} else {
-				line = prefix + styledLine
-			}
+			line = prefix + styledLine
+		} else if activeRange.active && activeRange.full {
+			prefix := lipgloss.NewStyle().Background(selBg).Render("  ")
+			line = prefix + styledLine
 		} else {
-			styledLine := style.Render(line)
-			if inVisual {
-				line = "  " + lipgloss.NewStyle().
-					Background(theme.Current.SelectedBg).
-					Render(styledLine)
-			} else {
-				line = "  " + styledLine
-			}
+			line = "  " + styledLine
 		}
 
 		s.WriteString(line)
@@ -156,9 +172,13 @@ func (m Model) renderFullNote() string {
 		Render(strings.Repeat("─", m.width)))
 	s.WriteString("\n")
 
-	mode := m.modeIndicator()
-	status := fmt.Sprintf("Ln %d  Col %d%s", m.lineCursor+1, m.colCursor+1, mode)
-	s.WriteString(StatusBarStyle.Width(m.width).Render(status))
+	if m.statusMsg != "" {
+		s.WriteString(StatusBarStyle.Width(m.width).Render(" " + m.statusMsg))
+	} else {
+		mode := m.modeIndicator()
+		status := fmt.Sprintf("Ln %d  Col %d%s", m.lineCursor+1, m.colCursor+1, mode)
+		s.WriteString(StatusBarStyle.Width(m.width).Render(status))
+	}
 	s.WriteString("\n")
 
 	helpKeys := []struct{ key, desc string }{
@@ -184,8 +204,9 @@ func (m Model) renderFullNote() string {
 	return s.String()
 }
 
+// --- Helpers ---
+
 // codeBlockLines returns which raw line indices are inside fenced code blocks.
-// The fence lines themselves (```) are included.
 func codeBlockLines(lines []string) map[int]bool {
 	result := map[int]bool{}
 	inside := false
@@ -228,35 +249,180 @@ func mdLineStyle(line string, inCodeBlock bool) lipgloss.Style {
 	}
 }
 
-// renderLineWithCursor renders a line with a visible vim-style block cursor
-// at colCursor. The before/after parts keep the line's markdown style; the
-// cursor character gets an inverted highlight.
-func (m Model) renderLineWithCursor(line string, style lipgloss.Style) string {
+// visualRangeForLine computes the column range selected on a given raw line.
+func (m Model) visualRangeForLine(rawLine int) visualRange {
+	if m.visualMode == VisualNone {
+		return visualRange{}
+	}
+
+	sLine, sCol := m.visualStart, m.visualStartCol
+	eLine, eCol := m.visualEnd, m.visualEndCol
+
+	// Normalize so s is before e.
+	if sLine > eLine || (sLine == eLine && sCol > eCol) {
+		sLine, eLine = eLine, sLine
+		sCol, eCol = eCol, sCol
+	}
+
+	if rawLine < sLine || rawLine > eLine {
+		return visualRange{}
+	}
+
+	if m.visualMode == VisualLine {
+		return visualRange{active: true, full: true, startCol: 0, endCol: -1}
+	}
+
+	// VisualChar
+	if sLine == eLine {
+		return visualRange{active: true, startCol: sCol, endCol: eCol}
+	}
+	if rawLine == sLine {
+		return visualRange{active: true, startCol: sCol, endCol: -1}
+	}
+	if rawLine == eLine {
+		return visualRange{active: true, startCol: 0, endCol: eCol}
+	}
+	// Middle line: fully selected.
+	return visualRange{active: true, full: true, startCol: 0, endCol: -1}
+}
+
+// yankRangeForLine computes the column range for the yank flash highlight on a given raw line.
+func (m Model) yankRangeForLine(rawLine int) visualRange {
+	if !m.yankHighlight {
+		return visualRange{}
+	}
+
+	sLine, sCol := m.yankStartLine, m.yankStartCol
+	eLine, eCol := m.yankEndLine, m.yankEndCol
+
+	if sLine > eLine || (sLine == eLine && sCol > eCol) {
+		sLine, eLine = eLine, sLine
+		sCol, eCol = eCol, sCol
+	}
+
+	if rawLine < sLine || rawLine > eLine {
+		return visualRange{}
+	}
+
+	if m.yankMode == VisualLine {
+		return visualRange{active: true, full: true, startCol: 0, endCol: -1}
+	}
+
+	// VisualChar
+	if sLine == eLine {
+		return visualRange{active: true, startCol: sCol, endCol: eCol}
+	}
+	if rawLine == sLine {
+		return visualRange{active: true, startCol: sCol, endCol: -1}
+	}
+	if rawLine == eLine {
+		return visualRange{active: true, startCol: 0, endCol: eCol}
+	}
+	return visualRange{active: true, full: true, startCol: 0, endCol: -1}
+}
+
+// renderContentLine renders a single content line with the correct combination
+// of inline markdown highlighting, visual-selection background, and block cursor.
+// selBg is the background color for selected/highlighted regions.
+// It batches consecutive characters that share the same (zone, inlineClass) pair
+// into segments so the output stays compact.
+func (m Model) renderContentLine(line string, baseStyle lipgloss.Style, inlineCls []int, vr visualRange, selBg lipgloss.Color, isCursorLine bool) string {
 	runes := []rune(line)
+
+	// Empty line with cursor: show a visible block.
+	if len(runes) == 0 {
+		if isCursorLine {
+			return lipgloss.NewStyle().
+				Background(primaryColor).
+				Foreground(theme.Current.Background).
+				Render(" ")
+		}
+		return ""
+	}
+
+	// Check if any inline class is non-normal.
+	hasInline := false
+	if inlineCls != nil {
+		for _, c := range inlineCls {
+			if c != clsNormal {
+				hasInline = true
+				break
+			}
+		}
+	}
+
+	// Fast path: no visual, no cursor, no inline → plain styled line.
+	if !vr.active && !isCursorLine && !hasInline {
+		return baseStyle.Render(line)
+	}
+
+	// Fast path: full-line visual, no cursor, no inline → style with selection bg.
+	if vr.active && vr.full && !isCursorLine && !hasInline {
+		return baseStyle.Background(selBg).Render(line)
+	}
+
+	// --- Segment-based rendering ---
 	col := m.colCursor
 	if col < 0 {
 		col = 0
+	}
+	if col >= len(runes) {
+		col = len(runes) - 1
+	}
+
+	sc, ec := -1, -1
+	if vr.active {
+		sc = vr.startCol
+		if sc < 0 {
+			sc = 0
+		}
+		ec = vr.endCol
+		if ec < 0 || ec >= len(runes) {
+			ec = len(runes) - 1
+		}
 	}
 
 	cursorStyle := lipgloss.NewStyle().
 		Background(primaryColor).
 		Foreground(theme.Current.Background)
 
-	// Empty line: show a single-space block cursor.
-	if len(runes) == 0 {
-		return cursorStyle.Render(" ")
+	// zone: 0=normal  1=selected  2=cursor
+	type seg struct {
+		text string
+		zone int
+		cls  int
 	}
-	if col >= len(runes) {
-		col = len(runes) - 1
+	var segs []seg
+	for i, r := range runes {
+		zone := 0
+		if isCursorLine && i == col {
+			zone = 2
+		} else if vr.active && i >= sc && i <= ec {
+			zone = 1
+		}
+		c := clsNormal
+		if hasInline && i < len(inlineCls) {
+			c = inlineCls[i]
+		}
+		ch := string(r)
+		if len(segs) > 0 && segs[len(segs)-1].zone == zone && segs[len(segs)-1].cls == c {
+			segs[len(segs)-1].text += ch
+		} else {
+			segs = append(segs, seg{text: ch, zone: zone, cls: c})
+		}
 	}
 
 	var result strings.Builder
-	if col > 0 {
-		result.WriteString(style.Render(string(runes[:col])))
-	}
-	result.WriteString(cursorStyle.Render(string(runes[col : col+1])))
-	if col+1 < len(runes) {
-		result.WriteString(style.Render(string(runes[col+1:])))
+	for _, sg := range segs {
+		st := resolveInlineStyle(sg.cls, baseStyle)
+		switch sg.zone {
+		case 2:
+			result.WriteString(cursorStyle.Render(sg.text))
+		case 1:
+			result.WriteString(st.Background(selBg).Render(sg.text))
+		default:
+			result.WriteString(st.Render(sg.text))
+		}
 	}
 	return result.String()
 }

@@ -9,6 +9,9 @@ import (
 // animTickMsg drives the home screen animation.
 type animTickMsg time.Time
 
+// yankFlashMsg clears the yank highlight after a brief delay.
+type yankFlashMsg time.Time
+
 func animTick() tea.Cmd {
 	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
 		return animTickMsg(t)
@@ -27,6 +30,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.fullNote != nil {
 			m.renderMarkdown()
 		}
+		return m, nil
+
+	case yankFlashMsg:
+		m.yankHighlight = false
 		return m, nil
 
 	case animTickMsg:

@@ -9,6 +9,9 @@ import (
 )
 
 func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.statusMsg = ""      // clear transient message on any keypress
+	m.yankHighlight = false // clear yank flash on any keypress
+
 	if m.showSearch {
 		if m.inFileSearch {
 			return m.updateInFileSearch(msg)
@@ -50,7 +53,7 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Yank
 	case "y":
-		m.yankSelection()
+		return m, m.yankSelection()
 
 	// Cursor movement
 	case "h", "left":

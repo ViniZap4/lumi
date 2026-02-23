@@ -12,7 +12,7 @@ func (m Model) renderConfig() string {
 	var s strings.Builder
 
 	// Vertical centering
-	contentHeight := len(m.configItems) + 10
+	contentHeight := len(m.configItems) + 22 // items + title + preview + swatches + help
 	topMargin := (m.height - contentHeight) / 2
 	if topMargin < 0 {
 		topMargin = 0
@@ -107,9 +107,57 @@ func (m Model) renderConfig() string {
 		s.WriteString("\n")
 	}
 
-	// Color preview swatches
+	// Note preview – shows how the theme renders markdown content
 	s.WriteString("\n")
+	previewWidth := 52
+	if previewWidth > m.width-8 {
+		previewWidth = m.width - 8
+	}
+	if previewWidth < 20 {
+		previewWidth = 20
+	}
 	t := theme.Current
+
+	sep := lipgloss.NewStyle().Foreground(t.Separator).
+		Render(strings.Repeat("─", previewWidth))
+
+	previewSamples := []string{
+		"# Heading 1",
+		"## Heading 2",
+		"",
+		"Normal text with **bold** and *italic*.",
+		"A `code span` and a [link](url).",
+		"",
+		"- List item one",
+		"> Blockquote text",
+	}
+	codeLines := codeBlockLines(previewSamples)
+
+	var previewBuf strings.Builder
+	previewBuf.WriteString(sep)
+	previewBuf.WriteString("\n")
+	for i, line := range previewSamples {
+		inCode := codeLines[i]
+		style := mdLineStyle(line, inCode)
+		var inlineCls []int
+		if shouldClassifyInline(line, inCode) {
+			inlineCls = classifyInline(line)
+		}
+		rendered := m.renderContentLine(line, style, inlineCls, visualRange{}, lipgloss.Color(""), false)
+		previewBuf.WriteString("  ")
+		previewBuf.WriteString(rendered)
+		previewBuf.WriteString("\n")
+	}
+	previewBuf.WriteString(sep)
+
+	preview := lipgloss.NewStyle().
+		Width(m.width).
+		Align(lipgloss.Center).
+		Render(previewBuf.String())
+	s.WriteString(preview)
+	s.WriteString("\n")
+
+	// Color swatches
 	swatchColors := []lipgloss.Color{t.Primary, t.Secondary, t.Accent, t.Muted, t.Text, t.Error, t.Warning, t.Info}
 	var swatches strings.Builder
 	for i, c := range swatchColors {
@@ -118,11 +166,11 @@ func (m Model) renderConfig() string {
 			swatches.WriteString(" ")
 		}
 	}
-	preview := lipgloss.NewStyle().
+	swatchLine := lipgloss.NewStyle().
 		Width(m.width).
 		Align(lipgloss.Center).
 		Render(swatches.String())
-	s.WriteString(preview)
+	s.WriteString(swatchLine)
 	s.WriteString("\n\n")
 
 	// Help bar

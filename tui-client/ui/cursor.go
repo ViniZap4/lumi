@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/atotto/clipboard"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // --- Cursor movement helpers ---
@@ -303,10 +306,11 @@ func (m *Model) isLineInVisual(i int) bool {
 	return i >= startLine && i <= endLine
 }
 
-// yankSelection copies the visual selection to clipboard and exits visual mode.
-func (m *Model) yankSelection() {
+// yankSelection copies the visual selection to clipboard, starts a yank flash,
+// and exits visual mode. Returns a tea.Cmd for the flash timer.
+func (m *Model) yankSelection() tea.Cmd {
 	if m.visualMode == VisualNone {
-		return
+		return nil
 	}
 
 	startLine := min(m.visualStart, m.visualEnd)
@@ -318,6 +322,8 @@ func (m *Model) yankSelection() {
 			selected = append(selected, m.contentLines[i])
 		}
 		clipboard.WriteAll(strings.Join(selected, "\n"))
+		n := endLine - startLine + 1
+		m.statusMsg = fmt.Sprintf("%d line%s yanked", n, pluralS(n))
 	} else if m.visualMode == VisualChar {
 		// Character-wise selection
 		sLine, sCol := m.visualStart, m.visualStartCol
@@ -358,9 +364,29 @@ func (m *Model) yankSelection() {
 			}
 			clipboard.WriteAll(strings.Join(parts, "\n"))
 		}
+		m.statusMsg = "selection yanked"
 	}
 
+	// Save range for yank flash highlight
+	m.yankHighlight = true
+	m.yankMode = m.visualMode
+	m.yankStartLine = m.visualStart
+	m.yankEndLine = m.visualEnd
+	m.yankStartCol = m.visualStartCol
+	m.yankEndCol = m.visualEndCol
+
 	m.visualMode = VisualNone
+
+	return tea.Tick(150*time.Millisecond, func(t time.Time) tea.Msg {
+		return yankFlashMsg(t)
+	})
+}
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // scrollOffset computes the scroll start line for the viewport.

@@ -84,6 +84,17 @@ type Model struct {
 	visualStartCol int
 	visualEndCol   int
 
+	// Transient status message (e.g. "3 lines yanked"), cleared on next keypress
+	statusMsg string
+
+	// Yank highlight flash (brief visual feedback after yanking)
+	yankHighlight  bool
+	yankMode       VisualModeType
+	yankStartLine  int
+	yankEndLine    int
+	yankStartCol   int
+	yankEndCol     int
+
 	// Modals
 	showNav    bool
 	showSearch bool
