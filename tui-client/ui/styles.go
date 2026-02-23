@@ -110,8 +110,9 @@ func ApplyTheme() {
 		Underline(true)
 
 	StatusBarStyle = lipgloss.NewStyle().
-		Background(bgColor).
-		Foreground(t.Text).
+		Background(t.SelectedBg).
+		Foreground(t.Primary).
+		Bold(true).
 		Padding(0, 1)
 }
 
