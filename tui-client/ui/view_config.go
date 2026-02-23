@@ -9,23 +9,37 @@ import (
 )
 
 func (m Model) renderConfig() string {
-	var s strings.Builder
+	t := theme.Current
 
-	// Vertical centering
-	contentHeight := len(m.configItems) + 22 // items + title + preview + swatches + help
-	topMargin := (m.height - contentHeight) / 2
-	if topMargin < 0 {
-		topMargin = 0
+	sepWidth := 3 // " │ "
+	leftWidth := m.width * 38 / 100
+	rightWidth := m.width - leftWidth - sepWidth
+	colHeight := m.height
+
+	leftCol := m.renderConfigLeft(leftWidth, colHeight)
+	rightCol := m.renderConfigPreview(rightWidth, colHeight)
+
+	// Build the separator column as a fixed-height block
+	sepChar := lipgloss.NewStyle().Foreground(t.Separator).Render(" │ ")
+	sepLines := make([]string, colHeight)
+	for i := range sepLines {
+		sepLines[i] = sepChar
 	}
-	for i := 0; i < topMargin; i++ {
-		s.WriteString("\n")
-	}
+	sep := strings.Join(sepLines, "\n")
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, sep, rightCol)
+}
+
+// renderConfigLeft renders the left column: title, config items, swatches, help.
+func (m Model) renderConfigLeft(width, height int) string {
+	var s strings.Builder
+	t := theme.Current
 
 	// Title
 	title := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(theme.Current.Primary).
-		Width(m.width).
+		Foreground(t.Primary).
+		Width(width).
 		Align(lipgloss.Center).
 		Render("Lumi Settings")
 	s.WriteString(title)
@@ -46,118 +60,65 @@ func (m Model) renderConfig() string {
 		case ConfigHeader:
 			line = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(theme.Current.Primary).
-				Render("    " + item.Label)
+				Foreground(t.Primary).
+				Render("  " + item.Label)
 			if i > 0 {
 				s.WriteString("\n")
 			}
 
 		case ConfigCycle:
-			label := fmt.Sprintf("      %-*s", maxLabelWidth+2, item.Label)
+			label := fmt.Sprintf("    %-*s", maxLabelWidth+2, item.Label)
 			value := fmt.Sprintf("< %s >", item.Value)
 
 			if i == m.configCursor {
 				line = lipgloss.NewStyle().
-					Foreground(theme.Current.Accent).
-					Background(theme.Current.SelectedBg).
+					Foreground(t.Accent).
+					Background(t.SelectedBg).
 					Render(label) +
 					lipgloss.NewStyle().
-						Foreground(theme.Current.Secondary).
-						Background(theme.Current.SelectedBg).
+						Foreground(t.Secondary).
+						Background(t.SelectedBg).
 						Bold(true).
 						Render(value)
 			} else {
 				line = lipgloss.NewStyle().
-					Foreground(theme.Current.Text).
+					Foreground(t.Text).
 					Render(label) +
 					lipgloss.NewStyle().
-						Foreground(theme.Current.Muted).
+						Foreground(t.Muted).
 						Render(value)
 			}
 
 		case ConfigAction:
-			label := fmt.Sprintf("      %-*s", maxLabelWidth+2, item.Label)
+			label := fmt.Sprintf("    %-*s", maxLabelWidth+2, item.Label)
 			arrow := "->"
 
 			if i == m.configCursor {
 				line = lipgloss.NewStyle().
-					Foreground(theme.Current.Accent).
-					Background(theme.Current.SelectedBg).
+					Foreground(t.Accent).
+					Background(t.SelectedBg).
 					Render(label) +
 					lipgloss.NewStyle().
-						Foreground(theme.Current.Secondary).
-						Background(theme.Current.SelectedBg).
+						Foreground(t.Secondary).
+						Background(t.SelectedBg).
 						Bold(true).
 						Render(arrow)
 			} else {
 				line = lipgloss.NewStyle().
-					Foreground(theme.Current.Text).
+					Foreground(t.Text).
 					Render(label) +
 					lipgloss.NewStyle().
-						Foreground(theme.Current.Muted).
+						Foreground(t.Muted).
 						Render(arrow)
 			}
 		}
 
-		centered := lipgloss.NewStyle().
-			Width(m.width).
-			Align(lipgloss.Center).
-			Render(line)
-		s.WriteString(centered)
+		s.WriteString(line)
 		s.WriteString("\n")
 	}
 
-	// Note preview – shows how the theme renders markdown content
-	s.WriteString("\n")
-	previewWidth := 52
-	if previewWidth > m.width-8 {
-		previewWidth = m.width - 8
-	}
-	if previewWidth < 20 {
-		previewWidth = 20
-	}
-	t := theme.Current
-
-	sep := lipgloss.NewStyle().Foreground(t.Separator).
-		Render(strings.Repeat("─", previewWidth))
-
-	previewSamples := []string{
-		"# Heading 1",
-		"## Heading 2",
-		"",
-		"Normal text with **bold** and *italic*.",
-		"A `code span` and a [link](url).",
-		"",
-		"- List item one",
-		"> Blockquote text",
-	}
-	codeLines := codeBlockLines(previewSamples)
-
-	var previewBuf strings.Builder
-	previewBuf.WriteString(sep)
-	previewBuf.WriteString("\n")
-	for i, line := range previewSamples {
-		inCode := codeLines[i]
-		style := mdLineStyle(line, inCode)
-		var inlineCls []int
-		if shouldClassifyInline(line, inCode) {
-			inlineCls = classifyInline(line)
-		}
-		rendered := m.renderContentLine(line, style, inlineCls, visualRange{}, lipgloss.Color(""), false)
-		previewBuf.WriteString("  ")
-		previewBuf.WriteString(rendered)
-		previewBuf.WriteString("\n")
-	}
-	previewBuf.WriteString(sep)
-
-	preview := lipgloss.NewStyle().
-		Width(m.width).
-		Align(lipgloss.Center).
-		Render(previewBuf.String())
-	s.WriteString(preview)
-	s.WriteString("\n")
-
 	// Color swatches
+	s.WriteString("\n")
 	swatchColors := []lipgloss.Color{t.Primary, t.Secondary, t.Accent, t.Muted, t.Text, t.Error, t.Warning, t.Info}
 	var swatches strings.Builder
 	for i, c := range swatchColors {
@@ -167,7 +128,7 @@ func (m Model) renderConfig() string {
 		}
 	}
 	swatchLine := lipgloss.NewStyle().
-		Width(m.width).
+		Width(width).
 		Align(lipgloss.Center).
 		Render(swatches.String())
 	s.WriteString(swatchLine)
@@ -187,10 +148,105 @@ func (m Model) renderConfig() string {
 		parts = append(parts, key+desc)
 	}
 	helpLine := lipgloss.NewStyle().
-		Width(m.width).
+		Width(width).
 		Align(lipgloss.Center).
 		Render(strings.Join(parts, "  "))
 	s.WriteString(helpLine)
 
-	return s.String()
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Render(s.String())
+}
+
+// renderConfigPreview renders the right column: a full sample note preview.
+func (m Model) renderConfigPreview(width, height int) string {
+	var s strings.Builder
+	t := theme.Current
+
+	// --- Header: title + tags (left) + date (right) ---
+	titleStyled := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(t.Primary).
+		Render(" Sample Note")
+
+	tagStr := "  " + lipgloss.NewStyle().
+		Foreground(t.Accent).
+		Render("#demo") +
+		" " + lipgloss.NewStyle().
+		Foreground(t.Accent).
+		Render("#theme")
+
+	dateStyled := lipgloss.NewStyle().
+		Foreground(t.Muted).
+		Render("Jan 1, 2026 ")
+
+	tw := lipgloss.Width(titleStyled) + lipgloss.Width(tagStr)
+	dw := lipgloss.Width(dateStyled)
+	gap := width - tw - dw
+	if gap < 1 {
+		gap = 1
+	}
+	s.WriteString(titleStyled + tagStr + strings.Repeat(" ", gap) + dateStyled)
+	s.WriteString("\n")
+
+	// Header separator
+	s.WriteString(lipgloss.NewStyle().
+		Foreground(t.Separator).
+		Render(strings.Repeat("─", width)))
+	s.WriteString("\n")
+
+	// --- Sample markdown content ---
+	previewSamples := []string{
+		"# Heading 1",
+		"## Heading 2",
+		"### Heading 3",
+		"",
+		"Normal text with **bold** and *italic*.",
+		"A `code span` and a [link](url).",
+		"",
+		"- List item one",
+		"- Another with [[wikilink]]",
+		"",
+		"> Blockquote text here",
+		"",
+		"```",
+		"code block line",
+		"```",
+		"",
+		"---",
+	}
+	codeLines := codeBlockLines(previewSamples)
+
+	for i, line := range previewSamples {
+		inCode := codeLines[i]
+		style := mdLineStyle(line, inCode)
+		var inlineCls []int
+		if shouldClassifyInline(line, inCode) {
+			inlineCls = classifyInline(line)
+		}
+		rendered := m.renderContentLine(line, style, inlineCls, visualRange{}, lipgloss.Color(""), false)
+		s.WriteString("  ")
+		s.WriteString(rendered)
+		s.WriteString("\n")
+	}
+
+	// --- Footer: separator + status bar ---
+	// Fill remaining space before footer
+	usedLines := 2 + len(previewSamples) + 2 // header(2) + content + footer(2)
+	remaining := height - usedLines
+	for i := 0; i < remaining; i++ {
+		s.WriteString("\n")
+	}
+
+	s.WriteString(lipgloss.NewStyle().
+		Foreground(t.Separator).
+		Render(strings.Repeat("─", width)))
+	s.WriteString("\n")
+	s.WriteString(StatusBarStyle.Width(width).Render("Ln 1  Col 1"))
+
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Render(s.String())
 }
