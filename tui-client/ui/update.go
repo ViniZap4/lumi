@@ -11,7 +11,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Re-render markdown with new width
 		if m.fullNote != nil {
 			m.renderMarkdown()
 		}
@@ -21,20 +20,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.items = msg.items
 		return m, nil
 
+	case navItemsLoadedMsg:
+		m.navItems = msg.items
+		return m, nil
+
 	case searchResultsMsg:
 		m.searchResults = msg.results
 		m.cursor = 0
 		return m, nil
 
 	case tea.KeyMsg:
-		// Input modal has highest priority
 		if m.showInput {
 			return m.updateInput(msg)
 		}
 
 		switch m.viewMode {
-		case ViewHome:
-			return m.updateHome(msg)
 		case ViewTree:
 			return m.updateTree(msg)
 		case ViewFullNote:

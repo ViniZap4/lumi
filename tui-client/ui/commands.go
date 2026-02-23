@@ -17,6 +17,10 @@ type itemsLoadedMsg struct {
 	items []Item
 }
 
+type navItemsLoadedMsg struct {
+	items []Item
+}
+
 type searchResultsMsg struct {
 	results []Item
 }
@@ -46,6 +50,31 @@ func (m Model) loadItems() tea.Msg {
 	}
 
 	return itemsLoadedMsg{items}
+}
+
+func (m Model) loadNavItems() tea.Msg {
+	var items []Item
+
+	folders, _ := filesystem.ListFolders(m.navDir)
+	for _, f := range folders {
+		items = append(items, Item{
+			Name:     f.Name,
+			IsFolder: true,
+			Path:     f.Path,
+		})
+	}
+
+	notes, _ := filesystem.ListNotes(m.navDir)
+	for _, n := range notes {
+		items = append(items, Item{
+			Name:     n.Title,
+			IsFolder: false,
+			Path:     n.Path,
+			Note:     n,
+		})
+	}
+
+	return navItemsLoadedMsg{items}
 }
 
 func (m Model) performSearch() tea.Msg {
@@ -120,7 +149,6 @@ func (m Model) followLinkAtCursor() tea.Cmd {
 }
 
 func (m *Model) openNoteByLink(target string) tea.Cmd {
-	// Search in current items first
 	for _, item := range m.items {
 		if item.Note != nil && (item.Note.ID == target || strings.Contains(item.Note.Path, target)) {
 			m.openNote(item.Note)
@@ -128,7 +156,6 @@ func (m *Model) openNoteByLink(target string) tea.Cmd {
 		}
 	}
 
-	// Search recursively through all notes
 	var found *Item
 	filepath.Walk(m.rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
@@ -159,6 +186,7 @@ func (m *Model) openNote(note *domain.Note) {
 	m.colCursor = 0
 	m.desiredCol = 0
 	m.visualMode = VisualNone
+	m.viewMode = ViewFullNote
 	m.renderMarkdown()
 }
 
@@ -193,7 +221,6 @@ func (m *Model) renderMarkdown() {
 	m.renderedView = rendered
 	m.renderedLines = strings.Split(rendered, "\n")
 
-	// Trim trailing empty lines from render
 	for len(m.renderedLines) > 0 && strings.TrimSpace(m.renderedLines[len(m.renderedLines)-1]) == "" {
 		m.renderedLines = m.renderedLines[:len(m.renderedLines)-1]
 	}

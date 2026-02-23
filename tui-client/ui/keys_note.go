@@ -9,7 +9,6 @@ import (
 )
 
 func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Search modal open
 	if m.showSearch {
 		if m.inFileSearch {
 			return m.updateInFileSearch(msg)
@@ -17,12 +16,10 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateNoteGlobalSearch(msg)
 	}
 
-	// Tree modal open
-	if m.showTree {
-		return m.updateTreeModal(msg)
+	if m.showNav {
+		return m.updateNavModal(msg)
 	}
 
-	// Normal note navigation
 	switch msg.String() {
 	case "q":
 		return m, tea.Quit
@@ -76,11 +73,9 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.updateVisualEnd()
 	case "e":
 		if m.visualMode != VisualNone {
-			// In visual mode, 'e' moves to end of word
 			m.moveWordEnd()
 			m.updateVisualEnd()
 		} else {
-			// Not in visual mode: open in editor
 			if m.fullNote != nil {
 				return m, tea.ExecProcess(editor.OpenCmd(m.fullNote), func(err error) tea.Msg {
 					return m.loadItems()
@@ -111,12 +106,14 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+u":
 		m.halfPageUp()
 
-	// Modals
+	// Navigation modal
 	case "t":
-		m.showTree = !m.showTree
-		if m.showTree {
-			return m, m.loadItems
-		}
+		m.showNav = true
+		m.navDir = m.currentDir
+		m.navCursor = 0
+		return m, m.loadNavItems
+
+	// Search
 	case "/":
 		m.showSearch = true
 		m.searchQuery = ""
@@ -133,14 +130,18 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		if m.visualMode == VisualNone {
 			m.splitMode = "horizontal"
-			m.showTree = true
-			return m, m.loadItems
+			m.showNav = true
+			m.navDir = m.currentDir
+			m.navCursor = 0
+			return m, m.loadNavItems
 		}
 	case "S":
 		if m.visualMode == VisualNone {
 			m.splitMode = "vertical"
-			m.showTree = true
-			return m, m.loadItems
+			m.showNav = true
+			m.navDir = m.currentDir
+			m.navCursor = 0
+			return m, m.loadNavItems
 		}
 
 	// Follow link
@@ -151,51 +152,70 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateTreeModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// updateNavModal handles keys when the navigation modal is open inside note view.
+func (m Model) updateNavModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.showTree = false
+		m.showNav = false
+		// If we opened nav for split and didn't pick, cancel split
+		if m.splitNote == nil {
+			m.splitMode = ""
+		}
 		return m, nil
 	case "j", "down":
-		if m.cursor < len(m.items)-1 {
-			m.cursor++
+		if m.navCursor < len(m.navItems)-1 {
+			m.navCursor++
 		}
 	case "k", "up":
-		if m.cursor > 0 {
-			m.cursor--
+		if m.navCursor > 0 {
+			m.navCursor--
 		}
 	case "h":
-		if m.currentDir != m.rootDir {
-			m.currentDir = filepath.Dir(m.currentDir)
-			m.cursor = 0
-			return m, m.loadItems
+		if m.navDir != m.rootDir {
+			m.navDir = filepath.Dir(m.navDir)
+			m.navCursor = 0
+			return m, m.loadNavItems
 		}
 	case "enter", "l":
-		if m.cursor < len(m.items) {
-			item := m.items[m.cursor]
+		if m.navCursor < len(m.navItems) {
+			item := m.navItems[m.navCursor]
 			if item.IsFolder {
-				m.currentDir = item.Path
-				m.cursor = 0
-				return m, m.loadItems
+				m.navDir = item.Path
+				m.navCursor = 0
+				return m, m.loadNavItems
 			} else if item.Note != nil {
-				m.openNote(item.Note)
-				m.showTree = false
-				m.cursor = 0
+				if m.splitMode != "" {
+					// We're picking a note for a split
+					m.splitNote = item.Note
+					m.showNav = false
+					m.navCursor = 0
+				} else {
+					// Switch to this note
+					m.openNote(item.Note)
+					m.showNav = false
+					m.navCursor = 0
+				}
 			}
 		}
 	case "s":
-		if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
+		if m.navCursor < len(m.navItems) && m.navItems[m.navCursor].Note != nil {
 			m.splitMode = "horizontal"
-			m.splitNote = m.items[m.cursor].Note
-			m.showTree = false
-			m.cursor = 0
+			m.splitNote = m.navItems[m.navCursor].Note
+			m.showNav = false
+			m.navCursor = 0
 		}
 	case "S":
-		if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
+		if m.navCursor < len(m.navItems) && m.navItems[m.navCursor].Note != nil {
 			m.splitMode = "vertical"
-			m.splitNote = m.items[m.cursor].Note
-			m.showTree = false
-			m.cursor = 0
+			m.splitNote = m.navItems[m.navCursor].Note
+			m.showNav = false
+			m.navCursor = 0
+		}
+	case "g":
+		m.navCursor = 0
+	case "G":
+		if len(m.navItems) > 0 {
+			m.navCursor = len(m.navItems) - 1
 		}
 	}
 

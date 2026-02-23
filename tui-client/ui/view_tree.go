@@ -9,40 +9,49 @@ import (
 	"github.com/vinizap/lumi/tui-client/filesystem"
 )
 
-func (m Model) renderTreeYazi() string {
+func (m Model) renderTree() string {
 	leftWidth := m.width / 4
 	centerWidth := m.width / 3
 	rightWidth := m.width - leftWidth - centerWidth - 4
 
 	var s strings.Builder
 
-	// Title bar with path
+	// Header bar
 	pathDisplay := m.displayPath()
-	title := lipgloss.NewStyle().
+	header := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(primaryColor).
+		Padding(0, 1).
+		Render("lumi")
+	pathLabel := lipgloss.NewStyle().
+		Foreground(mutedColor).
 		Render("  " + pathDisplay)
-	s.WriteString(title)
-	s.WriteString("\n\n")
+	s.WriteString(header + pathLabel)
+	s.WriteString("\n")
+	s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(strings.Repeat("-", m.width)))
+	s.WriteString("\n")
 
 	// Three columns
-	leftCol := m.renderParentCol(leftWidth, m.height-4)
-	centerCol := m.renderCenterCol(centerWidth, m.height-4)
-	rightCol := m.renderPreviewCol(rightWidth, m.height-4)
+	colHeight := m.height - 4
+	leftCol := m.renderParentCol(leftWidth, colHeight)
+	centerCol := m.renderCenterCol(centerWidth, colHeight)
+	rightCol := m.renderPreviewCol(rightWidth, colHeight)
+
+	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(" | ")
 
 	columns := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		leftCol,
-		lipgloss.NewStyle().Foreground(mutedColor).Render("|"),
+		sep,
 		centerCol,
-		lipgloss.NewStyle().Foreground(mutedColor).Render("|"),
+		sep,
 		rightCol,
 	)
 	s.WriteString(columns)
 
-	// Help bar
+	// Bottom bar
 	s.WriteString("\n")
-	s.WriteString(HelpStyle.Render("hjkl=move | enter=open | n=new | r=rename | d=delete | D=duplicate | /=search | esc=back | q=quit"))
+	s.WriteString(m.renderTreeHelp())
 
 	return s.String()
 }
@@ -55,6 +64,29 @@ func (m Model) displayPath() string {
 	return "~" + pathDisplay
 }
 
+func (m Model) renderTreeHelp() string {
+	keys := []struct{ key, desc string }{
+		{"j/k", "move"},
+		{"l/enter", "open"},
+		{"h", "back"},
+		{"n", "new"},
+		{"r", "rename"},
+		{"d", "delete"},
+		{"/", "search"},
+		{"c", "config"},
+		{"q", "quit"},
+	}
+
+	var parts []string
+	for _, k := range keys {
+		key := lipgloss.NewStyle().Foreground(secondaryColor).Bold(true).Render(k.key)
+		desc := lipgloss.NewStyle().Foreground(mutedColor).Render(" " + k.desc)
+		parts = append(parts, key+desc)
+	}
+
+	return lipgloss.NewStyle().Padding(0, 1).Render(strings.Join(parts, "  "))
+}
+
 func (m Model) renderParentCol(width, height int) string {
 	var s strings.Builder
 
@@ -63,7 +95,7 @@ func (m Model) renderParentCol(width, height int) string {
 		parentItems, _ := filesystem.ListFolders(parentDir)
 		parentNotes, _ := filesystem.ListNotes(parentDir)
 
-		maxItems := height - 2
+		maxItems := height - 1
 		count := 0
 
 		for _, f := range parentItems {
@@ -72,11 +104,15 @@ func (m Model) renderParentCol(width, height int) string {
 			}
 			name := f.Name
 			if f.Path == m.currentDir {
-				name = lipgloss.NewStyle().
+				s.WriteString(lipgloss.NewStyle().
 					Foreground(accentColor).
-					Render("> " + name)
+					Bold(true).
+					Render(" > " + name))
+			} else {
+				s.WriteString(lipgloss.NewStyle().
+					Foreground(mutedColor).
+					Render("   " + name))
 			}
-			s.WriteString("  " + name)
 			s.WriteString("\n")
 			count++
 		}
@@ -85,7 +121,9 @@ func (m Model) renderParentCol(width, height int) string {
 			if count >= maxItems {
 				break
 			}
-			s.WriteString("  " + n.Title)
+			s.WriteString(lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Render("   " + n.Title))
 			s.WriteString("\n")
 			count++
 		}
@@ -100,11 +138,15 @@ func (m Model) renderParentCol(width, height int) string {
 func (m Model) renderCenterCol(width, height int) string {
 	var s strings.Builder
 
-	for i, item := range m.items {
-		if i >= height {
-			break
-		}
+	maxItems := height - 1
+	// Scroll if needed
+	start := 0
+	if m.cursor >= maxItems {
+		start = m.cursor - maxItems + 1
+	}
 
+	for i := start; i < len(m.items) && i < start+maxItems; i++ {
+		item := m.items[i]
 		name := item.Name
 		if item.IsFolder {
 			name += "/"
@@ -115,16 +157,19 @@ func (m Model) renderCenterCol(width, height int) string {
 				Foreground(accentColor).
 				Background(selectedBg).
 				Bold(true).
-				Render("> " + name)
+				Width(width - 1).
+				Render(" > " + name)
 			s.WriteString(line)
 		} else {
-			s.WriteString("  " + name)
+			s.WriteString(lipgloss.NewStyle().
+				Width(width - 1).
+				Render("   " + name))
 		}
 		s.WriteString("\n")
 	}
 
 	if len(m.items) == 0 {
-		s.WriteString(DimItemStyle.Render("  No items"))
+		s.WriteString(DimItemStyle.Render("   (empty)"))
 	}
 
 	return lipgloss.NewStyle().
@@ -146,43 +191,66 @@ func (m Model) renderPreviewCol(width, height int) string {
 		s.WriteString(lipgloss.NewStyle().
 			Foreground(secondaryColor).
 			Bold(true).
-			Render("  " + item.Name))
+			Render(" " + item.Name + "/"))
 		s.WriteString("\n\n")
 
 		folderNotes, _ := filesystem.ListNotes(item.Path)
-		if len(folderNotes) > 0 {
-			s.WriteString(DimItemStyle.Render(fmt.Sprintf("%d notes:", len(folderNotes))))
-			s.WriteString("\n")
-			for i, note := range folderNotes {
-				if i >= height-4 {
+		subFolders, _ := filesystem.ListFolders(item.Path)
+
+		if len(subFolders) > 0 || len(folderNotes) > 0 {
+			s.WriteString(lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Render(fmt.Sprintf(" %d items", len(subFolders)+len(folderNotes))))
+			s.WriteString("\n\n")
+
+			count := 0
+			for _, f := range subFolders {
+				if count >= height-5 {
 					break
 				}
-				s.WriteString(fmt.Sprintf("  %s\n", note.Title))
+				s.WriteString(lipgloss.NewStyle().
+					Foreground(mutedColor).
+					Render("   " + f.Name + "/"))
+				s.WriteString("\n")
+				count++
+			}
+			for _, n := range folderNotes {
+				if count >= height-5 {
+					break
+				}
+				s.WriteString("   " + n.Title)
+				s.WriteString("\n")
+				count++
 			}
 		} else {
-			s.WriteString(DimItemStyle.Render("(empty folder)"))
+			s.WriteString(DimItemStyle.Render(" (empty folder)"))
 		}
 	} else if item.Note != nil {
+		// Title
 		s.WriteString(lipgloss.NewStyle().
 			Foreground(secondaryColor).
 			Bold(true).
-			Render("  " + item.Note.Title))
-		s.WriteString("\n\n")
+			Render(" " + item.Note.Title))
+		s.WriteString("\n")
 
-		meta := fmt.Sprintf("%s  %s",
-			item.Note.ID,
-			item.Note.UpdatedAt.Format("Jan 2"))
-		s.WriteString(PreviewMetaStyle.Render(meta))
-		s.WriteString("\n\n")
+		// Metadata
+		meta := lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Render(fmt.Sprintf(" %s", item.Note.UpdatedAt.Format("Jan 2, 2006")))
+		s.WriteString(meta)
+		s.WriteString("\n")
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(" " + strings.Repeat("-", width-3)))
+		s.WriteString("\n")
 
+		// Content preview
 		lines := strings.Split(item.Note.Content, "\n")
-		previewLines := min(height-6, len(lines))
+		previewLines := min(height-5, len(lines))
 		for i := 0; i < previewLines; i++ {
 			line := lines[i]
-			if len(line) > width-2 {
-				line = line[:width-2] + "..."
+			if len(line) > width-3 {
+				line = line[:width-6] + "..."
 			}
-			s.WriteString(line)
+			s.WriteString(" " + line)
 			s.WriteString("\n")
 		}
 	}

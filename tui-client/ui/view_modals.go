@@ -1,101 +1,157 @@
 package ui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vinizap/lumi/tui-client/domain"
+	"github.com/vinizap/lumi/tui-client/filesystem"
 )
 
-func (m Model) renderWithTreeModal(base string) string {
-	modalWidth := min(m.width-10, 90)
+// renderWithNavModal renders the navigation overlay on top of the note view.
+func (m Model) renderWithNavModal(base string) string {
+	modalWidth := min(m.width-6, 90)
+	modalHeight := min(m.height-4, 30)
 
 	var modal strings.Builder
 
 	// Path header
-	pathDisplay := m.displayPath()
+	navPath := strings.TrimPrefix(m.navDir, m.rootDir)
+	if navPath == "" {
+		navPath = "~"
+	} else {
+		navPath = "~" + navPath
+	}
+
 	parentInfo := ""
-	if m.currentDir != m.rootDir {
-		parentDir := filepath.Dir(m.currentDir)
-		parentName := filepath.Base(parentDir)
-		if parentName == filepath.Base(m.rootDir) {
+	if m.navDir != m.rootDir {
+		parentName := filepath.Base(filepath.Dir(m.navDir))
+		if filepath.Dir(m.navDir) == m.rootDir {
 			parentName = "~"
 		}
 		parentInfo = lipgloss.NewStyle().
 			Foreground(mutedColor).
-			Render(" <- " + parentName)
+			Render("  <- " + parentName)
 	}
 
 	modal.WriteString(lipgloss.NewStyle().
 		Bold(true).
 		Foreground(primaryColor).
-		Render("  " + pathDisplay + parentInfo))
-	modal.WriteString("\n\n")
+		Render(" " + navPath + parentInfo))
+	modal.WriteString("\n")
+	modal.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("236")).
+		Render(strings.Repeat("-", modalWidth-6)))
+	modal.WriteString("\n")
 
-	// Items
-	maxItems := 12
-	for i, item := range m.items {
-		if i >= maxItems {
-			break
-		}
+	// Items list with scrolling
+	listHeight := modalHeight - 8
+	if listHeight < 4 {
+		listHeight = 4
+	}
 
+	items := m.navItems
+	start := 0
+	if m.navCursor >= listHeight {
+		start = m.navCursor - listHeight + 1
+	}
+
+	count := 0
+	for i := start; i < len(items) && count < listHeight; i++ {
+		item := items[i]
 		name := item.Name
 		if item.IsFolder {
 			name += "/"
 		}
 
-		if i == m.cursor {
+		if i == m.navCursor {
 			line := lipgloss.NewStyle().
 				Foreground(accentColor).
 				Background(selectedBg).
 				Bold(true).
-				Render("> " + name)
+				Width(modalWidth - 8).
+				Render(" > " + name)
 			modal.WriteString(line)
 		} else {
-			modal.WriteString("  " + name)
+			modal.WriteString(lipgloss.NewStyle().
+				Width(modalWidth - 8).
+				Render("   " + name))
 		}
 		modal.WriteString("\n")
+		count++
 	}
 
-	if len(m.items) == 0 {
-		modal.WriteString(DimItemStyle.Render("  (empty)"))
+	if len(items) == 0 {
+		modal.WriteString(DimItemStyle.Render("   (empty)"))
 		modal.WriteString("\n")
 	}
 
 	// Preview for selected note
-	if m.cursor >= 0 && m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
-		modal.WriteString("\n")
-		modal.WriteString(strings.Repeat("-", modalWidth-4))
-		modal.WriteString("\n")
-		modal.WriteString(lipgloss.NewStyle().
-			Foreground(primaryColor).
-			Bold(true).
-			Render("Preview"))
-		modal.WriteString("\n\n")
+	if m.navCursor >= 0 && m.navCursor < len(items) {
+		item := items[m.navCursor]
+		if item.Note != nil {
+			modal.WriteString("\n")
+			modal.WriteString(lipgloss.NewStyle().
+				Foreground(lipgloss.Color("236")).
+				Render(strings.Repeat("-", modalWidth-6)))
+			modal.WriteString("\n")
 
-		note := m.items[m.cursor].Note
-		previewLines := strings.Split(note.Content, "\n")
-		maxPreview := 5
-		for i := 0; i < min(len(previewLines), maxPreview); i++ {
-			line := previewLines[i]
-			if len(line) > modalWidth-6 {
-				line = line[:modalWidth-6] + "..."
+			modal.WriteString(lipgloss.NewStyle().
+				Foreground(secondaryColor).
+				Bold(true).
+				Render(" " + item.Note.Title))
+			modal.WriteString("\n")
+
+			previewLines := strings.Split(item.Note.Content, "\n")
+			maxPreview := 4
+			for i := 0; i < min(len(previewLines), maxPreview); i++ {
+				line := previewLines[i]
+				if len(line) > modalWidth-8 {
+					line = line[:modalWidth-11] + "..."
+				}
+				modal.WriteString(lipgloss.NewStyle().
+					Foreground(mutedColor).
+					Render(" " + line))
+				modal.WriteString("\n")
 			}
+		} else if item.IsFolder {
+			modal.WriteString("\n")
+			notes, _ := filesystem.ListNotes(item.Path)
+			folders, _ := filesystem.ListFolders(item.Path)
 			modal.WriteString(lipgloss.NewStyle().
 				Foreground(mutedColor).
-				Render("  " + line))
+				Render(lipgloss.NewStyle().
+					Foreground(lipgloss.Color("236")).
+					Render(strings.Repeat("-", modalWidth-6)) + "\n"))
+			modal.WriteString(lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Render(renderItemCount(len(folders), len(notes))))
 			modal.WriteString("\n")
 		}
 	}
 
+	// Help
 	modal.WriteString("\n")
-	modal.WriteString(HelpStyle.Render("hjkl=navigate | enter=open | s=split-h | S=split-v | esc=close"))
+	helpParts := []struct{ key, desc string }{
+		{"hjkl", "navigate"},
+		{"enter", "open"},
+		{"s/S", "split"},
+		{"esc", "close"},
+	}
+	var parts []string
+	for _, h := range helpParts {
+		key := lipgloss.NewStyle().Foreground(secondaryColor).Bold(true).Render(h.key)
+		desc := lipgloss.NewStyle().Foreground(mutedColor).Render(" " + h.desc)
+		parts = append(parts, key+desc)
+	}
+	modal.WriteString(strings.Join(parts, "  "))
 
 	modalBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(accentColor).
+		BorderForeground(lipgloss.Color("62")).
 		Padding(1, 2).
 		Width(modalWidth).
 		Render(modal.String())
@@ -109,6 +165,28 @@ func (m Model) renderWithTreeModal(base string) string {
 		lipgloss.WithWhitespaceChars(" "),
 		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
 	)
+}
+
+func renderItemCount(folders, notes int) string {
+	var parts []string
+	if folders > 0 {
+		s := "folder"
+		if folders > 1 {
+			s = "folders"
+		}
+		parts = append(parts, fmt.Sprintf(" %d %s", folders, s))
+	}
+	if notes > 0 {
+		s := "note"
+		if notes > 1 {
+			s = "notes"
+		}
+		parts = append(parts, fmt.Sprintf(" %d %s", notes, s))
+	}
+	if len(parts) == 0 {
+		return " (empty)"
+	}
+	return strings.Join(parts, ",")
 }
 
 func (m Model) renderWithInputModal(base string) string {
@@ -154,7 +232,7 @@ func (m Model) renderSplitView() string {
 
 		s.WriteString(m.renderNoteInBox(m.fullNote, m.width, topHeight))
 		s.WriteString("\n")
-		s.WriteString(strings.Repeat("-", m.width))
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(strings.Repeat("-", m.width)))
 		s.WriteString("\n")
 		s.WriteString(m.renderNoteInBox(m.splitNote, m.width, bottomHeight))
 	} else {
@@ -167,7 +245,7 @@ func (m Model) renderSplitView() string {
 		s.WriteString(lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			left,
-			lipgloss.NewStyle().Foreground(mutedColor).Render("|"),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render("|"),
 			right,
 		))
 	}
@@ -191,7 +269,6 @@ func (m Model) renderNoteInBox(note *domain.Note, width, height int) string {
 		Render(note.Title))
 	s.WriteString("\n\n")
 
-	// Use glamour for split note rendering too
 	boxWidth := width - 4
 	if boxWidth < 20 {
 		boxWidth = 20

@@ -10,9 +10,8 @@ import (
 type ViewMode int
 
 const (
-	ViewHome ViewMode = iota
-	ViewTree
-	ViewFullNote
+	ViewTree     ViewMode = iota // file browser (default)
+	ViewFullNote                 // reading a note
 )
 
 // VisualModeType represents the type of visual selection.
@@ -45,25 +44,30 @@ type Model struct {
 	renderer   *glamour.TermRenderer
 
 	// Note view state
-	fullNote     *domain.Note
-	contentLines []string // raw markdown lines
-	renderedView string   // glamour-rendered output
-	renderedLines []string // rendered output split into lines
-	lineCursor   int
-	colCursor    int
-	desiredCol   int // sticky column for vertical movement (like vim)
+	fullNote      *domain.Note
+	contentLines  []string  // raw markdown lines
+	renderedView  string    // glamour-rendered output
+	renderedLines []string  // rendered output split into lines
+	lineCursor    int
+	colCursor     int
+	desiredCol    int // sticky column for vertical movement (like vim)
 
 	// Visual mode
-	visualMode  VisualModeType
-	visualStart int // anchor line (or char position for VisualChar)
-	visualEnd   int
-	visualStartCol int // anchor column for VisualChar
+	visualMode     VisualModeType
+	visualStart    int
+	visualEnd      int
+	visualStartCol int
 	visualEndCol   int
 
 	// Modals
-	showTree  bool
+	showNav    bool // navigation modal (file browser overlay on note view)
 	showSearch bool
 	showInput  bool
+
+	// Navigation modal state (separate cursor from main tree)
+	navCursor int
+	navDir    string
+	navItems  []Item
 
 	// Split view
 	splitMode string // "", "horizontal", "vertical"
@@ -78,9 +82,6 @@ type Model struct {
 	// Input modal
 	inputMode  string // "create", "rename"
 	inputValue string
-
-	// Half-page scroll amount
-	scrollAmount int
 }
 
 // NewModel creates and returns a new Model.
@@ -95,8 +96,9 @@ func NewModel(rootDir string) Model {
 	return Model{
 		rootDir:    rootDir,
 		currentDir: rootDir,
+		navDir:     rootDir,
 		items:      []Item{},
-		viewMode:   ViewHome,
+		viewMode:   ViewTree,
 		renderer:   renderer,
 		searchType: cfg.SearchType,
 	}

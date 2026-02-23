@@ -16,32 +16,27 @@ func (m Model) View() string {
 	}
 
 	switch m.viewMode {
-	case ViewHome:
-		return m.renderHome()
 	case ViewFullNote:
 		if m.showSearch && m.inFileSearch {
 			return m.renderWithInFileSearch()
 		}
-		if m.showTree {
-			return m.renderWithTreeModal(m.renderFullNote())
+		if m.showNav {
+			return m.renderWithNavModal(m.renderFullNote())
 		}
 		if m.splitMode != "" && m.splitNote != nil {
 			return m.renderSplitView()
 		}
 		return m.renderFullNote()
 	default:
-		return m.renderTreeYazi()
+		return m.renderTree()
 	}
 }
 
-// renderBase returns the base view for the current mode (used under modals).
 func (m Model) renderBase() string {
 	switch m.viewMode {
-	case ViewHome:
-		return m.renderHome()
 	case ViewFullNote:
 		return m.renderFullNote()
 	default:
-		return m.renderTreeYazi()
+		return m.renderTree()
 	}
 }
