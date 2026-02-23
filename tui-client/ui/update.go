@@ -31,9 +31,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case animTickMsg:
 		if m.viewMode == ViewHome && !m.animDone {
-			m.animLine++
-			if m.animLine >= len(logoLines) {
-				m.animLine = len(logoLines)
+			m.animCol += 5
+			if m.animCol >= logoMaxRunes()+logoStagger() {
+				m.animCol = logoMaxRunes() + logoStagger()
 				m.animDone = true
 				return m, nil
 			}

@@ -7,14 +7,41 @@ import (
 	"github.com/vinizap/lumi/tui-client/theme"
 )
 
-// logoLines holds each line of the ASCII art separately for line-by-line animation.
+// logoLines holds each line of the ASCII art for the diagonal wipe animation.
 var logoLines = []string{
-	`  ██╗     ██╗   ██╗███╗   ███╗██╗`,
-	`  ██║     ██║   ██║████╗ ████║██║`,
-	`  ██║     ██║   ██║██╔████╔██║██║`,
-	`  ██║     ██║   ██║██║╚██╔╝██║██║`,
-	`  ███████╗╚██████╔╝██║ ╚═╝ ██║██║`,
-	`  ╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝`,
+	`██╗     ██╗   ██╗███╗   ███╗██╗`,
+	` ██║     ██║   ██║████╗ ████║██║`,
+	` ██║     ██║   ██║██╔████╔██║██║`,
+	` ██║     ██║   ██║██║╚██╔╝██║██║`,
+	` ███████╗╚██████╔╝██║ ╚═╝ ██║██║`,
+	` ╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝`,
+}
+
+// logoRuneWidths caches the rune length of each logo line.
+var logoRuneWidths []int
+
+func init() {
+	logoRuneWidths = make([]int, len(logoLines))
+	for i, line := range logoLines {
+		logoRuneWidths[i] = len([]rune(line))
+	}
+}
+
+// logoMaxRunes returns the rune length of the longest logo line.
+func logoMaxRunes() int {
+	m := 0
+	for _, w := range logoRuneWidths {
+		if w > m {
+			m = w
+		}
+	}
+	return m
+}
+
+// logoStagger returns the total diagonal offset across all lines.
+// Each line after the first is delayed by 2 rune columns.
+func logoStagger() int {
+	return (len(logoLines) - 1) * 2
 }
 
 func (m Model) renderHome() string {
@@ -30,30 +57,47 @@ func (m Model) renderHome() string {
 		s.WriteString("\n")
 	}
 
-	// Animated logo: reveal lines progressively
-	visibleCount := len(logoLines)
-	if !m.animDone && m.animLine < len(logoLines) {
-		visibleCount = m.animLine
-	}
+	// Diagonal left-to-right wipe: each line is offset by 2 columns.
+	// Pad every line to the same rune width so lipgloss centers the
+	// block as a whole instead of centering each line independently.
+	maxW := logoMaxRunes()
 
-	// Color each visible line with theme gradient
 	var artRendered strings.Builder
-	for i := 0; i < visibleCount; i++ {
+	for i, line := range logoLines {
+		runes := []rune(line)
 		color := theme.Current.LogoColors[i%len(theme.Current.LogoColors)]
-		artRendered.WriteString(lipgloss.NewStyle().
-			Foreground(color).
-			Bold(true).
-			Render(logoLines[i]))
-		if i < visibleCount-1 {
+
+		visible := m.animCol - i*2 // diagonal offset
+		if m.animDone {
+			visible = len(runes)
+		}
+		if visible < 0 {
+			visible = 0
+		}
+		if visible > len(runes) {
+			visible = len(runes)
+		}
+
+		// Render the visible portion, then pad with spaces to maxW
+		visibleStr := ""
+		if visible > 0 {
+			visibleStr = lipgloss.NewStyle().
+				Foreground(color).
+				Bold(true).
+				Render(string(runes[:visible]))
+		}
+		pad := maxW - len(runes)
+		if pad < 0 {
+			pad = 0
+		}
+		artRendered.WriteString(visibleStr + strings.Repeat(" ", pad))
+		if i < len(logoLines)-1 {
 			artRendered.WriteString("\n")
 		}
 	}
 
-	// Center the art
-	artBlock := lipgloss.NewStyle().
-		Width(m.width).
-		Align(lipgloss.Center).
-		Render(artRendered.String())
+	// Center the whole block as one unit
+	artBlock := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, artRendered.String())
 	s.WriteString(artBlock)
 	s.WriteString("\n\n")
 

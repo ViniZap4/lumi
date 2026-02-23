@@ -14,7 +14,7 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Any key during animation skips to the end
 	if !m.animDone {
 		m.animDone = true
-		m.animLine = len(logoLines)
+		m.animCol = logoMaxRunes() + logoStagger()
 		return m, nil
 	}
 

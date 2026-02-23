@@ -64,8 +64,8 @@ type Model struct {
 	viewMode   ViewMode
 	renderer   *glamour.TermRenderer
 
-	// Home animation
-	animLine int  // how many lines of the logo have been revealed
+	// Home animation (diagonal left-to-right wipe)
+	animCol  int  // how many rune columns have been revealed
 	animDone bool // animation finished
 
 	// Note view state

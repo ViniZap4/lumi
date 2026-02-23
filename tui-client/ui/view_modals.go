@@ -96,6 +96,7 @@ func (m Model) renderWithNavModal(base string) string {
 	modalBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(theme.Current.Border).
+		Background(theme.Current.Background).
 		Padding(1, 2).
 		Width(modalWidth).
 		Render(modal.String())
@@ -108,6 +109,7 @@ func (m Model) renderWithNavModal(base string) string {
 		modalBox,
 		lipgloss.WithWhitespaceChars(" "),
 		lipgloss.WithWhitespaceForeground(theme.Current.OverlayBg),
+		lipgloss.WithWhitespaceBackground(theme.Current.OverlayBg),
 	)
 }
 
@@ -304,6 +306,7 @@ func (m Model) renderWithInputModal(base string) string {
 		Width(modalWidth).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(theme.Current.Border).
+		Background(theme.Current.Background).
 		Padding(1, 2).
 		Render(s.String())
 
@@ -315,6 +318,7 @@ func (m Model) renderWithInputModal(base string) string {
 		modal,
 		lipgloss.WithWhitespaceChars(" "),
 		lipgloss.WithWhitespaceForeground(theme.Current.OverlayBg),
+		lipgloss.WithWhitespaceBackground(theme.Current.OverlayBg),
 	)
 }
 

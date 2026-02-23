@@ -136,6 +136,7 @@ func (m Model) renderWithSearchModal(base string) string {
 	modalBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(accentColor).
+		Background(theme.Current.Background).
 		Padding(1, 2).
 		Width(modalWidth).
 		Render(modal.String())
@@ -146,6 +147,7 @@ func (m Model) renderWithSearchModal(base string) string {
 		lipgloss.Center,
 		lipgloss.Center,
 		modalBox,
+		lipgloss.WithWhitespaceBackground(theme.Current.OverlayBg),
 	)
 }
 
