@@ -74,7 +74,8 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "c":
-		return m, m.openConfig()
+		m.enterConfig()
+		return m, nil
 	case "g":
 		m.cursor = 0
 	case "G":

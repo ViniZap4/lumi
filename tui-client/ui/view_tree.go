@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vinizap/lumi/tui-client/filesystem"
+	"github.com/vinizap/lumi/tui-client/theme"
 )
 
 func (m Model) renderTree() string {
@@ -28,7 +29,7 @@ func (m Model) renderTree() string {
 		Render("  " + pathDisplay)
 	s.WriteString(header + pathLabel)
 	s.WriteString("\n")
-	s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(strings.Repeat("-", m.width)))
+	s.WriteString(lipgloss.NewStyle().Foreground(theme.Current.Separator).Render(strings.Repeat("-", m.width)))
 	s.WriteString("\n")
 
 	// Three columns
@@ -37,7 +38,7 @@ func (m Model) renderTree() string {
 	centerCol := m.renderCenterCol(centerWidth, colHeight)
 	rightCol := m.renderPreviewCol(rightWidth, colHeight)
 
-	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(" | ")
+	sep := lipgloss.NewStyle().Foreground(theme.Current.Separator).Render(" | ")
 
 	columns := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -239,7 +240,7 @@ func (m Model) renderPreviewCol(width, height int) string {
 			Render(fmt.Sprintf(" %s", item.Note.UpdatedAt.Format("Jan 2, 2006")))
 		s.WriteString(meta)
 		s.WriteString("\n")
-		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(" " + strings.Repeat("-", width-3)))
+		s.WriteString(lipgloss.NewStyle().Foreground(theme.Current.Separator).Render(" " + strings.Repeat("-", width-3)))
 		s.WriteString("\n")
 
 		// Content preview

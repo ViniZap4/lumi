@@ -10,7 +10,7 @@ import (
 type animTickMsg time.Time
 
 func animTick() tea.Cmd {
-	return tea.Tick(18*time.Millisecond, func(t time.Time) tea.Msg {
+	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
 		return animTickMsg(t)
 	})
 }
@@ -31,9 +31,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case animTickMsg:
 		if m.viewMode == ViewHome && !m.animDone {
-			m.animPos += 2
-			if m.animPos >= len(logoFull) {
-				m.animPos = len(logoFull)
+			m.animLine++
+			if m.animLine >= len(logoLines) {
+				m.animLine = len(logoLines)
 				m.animDone = true
 				return m, nil
 			}
@@ -66,6 +66,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTree(msg)
 		case ViewFullNote:
 			return m.updateNote(msg)
+		case ViewConfig:
+			return m.updateConfig(msg)
 		}
 	}
 

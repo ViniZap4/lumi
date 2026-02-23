@@ -4,17 +4,18 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/vinizap/lumi/tui-client/theme"
 )
 
-// logoFull is the complete ASCII art that gets animated character-by-character.
-var logoFull = strings.Join([]string{
+// logoLines holds each line of the ASCII art separately for line-by-line animation.
+var logoLines = []string{
 	`  ██╗     ██╗   ██╗███╗   ███╗██╗`,
 	`  ██║     ██║   ██║████╗ ████║██║`,
 	`  ██║     ██║   ██║██╔████╔██║██║`,
 	`  ██║     ██║   ██║██║╚██╔╝██║██║`,
 	`  ███████╗╚██████╔╝██║ ╚═╝ ██║██║`,
 	`  ╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝`,
-}, "\n")
+}
 
 func (m Model) renderHome() string {
 	var s strings.Builder
@@ -29,24 +30,21 @@ func (m Model) renderHome() string {
 		s.WriteString("\n")
 	}
 
-	// Animated logo: reveal characters progressively
-	visible := logoFull
-	if !m.animDone && m.animPos < len(logoFull) {
-		visible = logoFull[:m.animPos]
+	// Animated logo: reveal lines progressively
+	visibleCount := len(logoLines)
+	if !m.animDone && m.animLine < len(logoLines) {
+		visibleCount = m.animLine
 	}
 
-	// Color the visible portion with a gradient effect
-	artLines := strings.Split(visible, "\n")
-	colors := []lipgloss.Color{"99", "105", "111", "141", "147", "183"}
-
+	// Color each visible line with theme gradient
 	var artRendered strings.Builder
-	for i, line := range artLines {
-		color := colors[i%len(colors)]
+	for i := 0; i < visibleCount; i++ {
+		color := theme.Current.LogoColors[i%len(theme.Current.LogoColors)]
 		artRendered.WriteString(lipgloss.NewStyle().
 			Foreground(color).
 			Bold(true).
-			Render(line))
-		if i < len(artLines)-1 {
+			Render(logoLines[i]))
+		if i < visibleCount-1 {
 			artRendered.WriteString("\n")
 		}
 	}
@@ -74,14 +72,14 @@ func (m Model) renderHome() string {
 		keys := []struct{ key, desc string }{
 			{"/", "Search notes"},
 			{"t", "Browse tree"},
-			{"c", "Edit config"},
+			{"c", "Settings"},
 			{"q", "Quit"},
 		}
 
 		var keysBlock strings.Builder
 		for _, k := range keys {
 			keyStyle := lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render(k.key)
-			descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render("  " + k.desc)
+			descStyle := lipgloss.NewStyle().Foreground(theme.Current.Text).Render("  " + k.desc)
 			keysBlock.WriteString(keyStyle + descStyle + "\n")
 		}
 

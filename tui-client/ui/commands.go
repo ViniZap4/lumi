@@ -9,7 +9,16 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/vinizap/lumi/tui-client/domain"
 	"github.com/vinizap/lumi/tui-client/filesystem"
+	"github.com/vinizap/lumi/tui-client/theme"
 )
+
+// glamourStyle returns the glamour style path based on the current theme.
+func glamourStyle() string {
+	if theme.Current.IsDark {
+		return "dark"
+	}
+	return "light"
+}
 
 // --- Messages ---
 
@@ -202,7 +211,7 @@ func (m *Model) renderMarkdown() {
 	}
 
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStylePath(glamourStyle()),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {

@@ -18,6 +18,8 @@ func (m Model) View() string {
 	switch m.viewMode {
 	case ViewHome:
 		return m.renderHome()
+	case ViewConfig:
+		return m.renderConfig()
 	case ViewFullNote:
 		if m.showSearch && m.inFileSearch {
 			return m.renderWithInFileSearch()
@@ -38,6 +40,8 @@ func (m Model) renderBase() string {
 	switch m.viewMode {
 	case ViewHome:
 		return m.renderHome()
+	case ViewConfig:
+		return m.renderConfig()
 	case ViewFullNote:
 		return m.renderFullNote()
 	default:

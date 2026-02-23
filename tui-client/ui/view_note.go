@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vinizap/lumi/tui-client/image"
+	"github.com/vinizap/lumi/tui-client/theme"
 )
 
 func (m Model) renderFullNote() string {
@@ -60,7 +61,7 @@ func (m Model) renderFullNote() string {
 
 			if inVisual {
 				line = prefix + lipgloss.NewStyle().
-					Background(lipgloss.Color("237")).
+					Background(theme.Current.SelectedBg).
 					Render(line)
 			} else {
 				line = prefix + line
@@ -68,7 +69,7 @@ func (m Model) renderFullNote() string {
 		} else {
 			if inVisual {
 				line = "  " + lipgloss.NewStyle().
-					Background(lipgloss.Color("237")).
+					Background(theme.Current.SelectedBg).
 					Render(line)
 			} else {
 				line = "  " + line
@@ -108,7 +109,7 @@ func (m Model) processImages(lines []string) []string {
 				}
 			}
 			result = append(result, lipgloss.NewStyle().
-				Foreground(lipgloss.Color("196")).
+				Foreground(theme.Current.Error).
 				Render(fmt.Sprintf("[Image not found: %s]", filepath.Base(image.ExtractImagePath(line)))))
 		} else {
 			result = append(result, line)

@@ -14,7 +14,7 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Any key during animation skips to the end
 	if !m.animDone {
 		m.animDone = true
-		m.animPos = len(logoFull)
+		m.animLine = len(logoLines)
 		return m, nil
 	}
 
@@ -33,7 +33,8 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.inFileSearch = false
 		return m, func() tea.Msg { return m.performSearch() }
 	case "c":
-		return m, m.openConfig()
+		m.enterConfig()
+		return m, nil
 	case "t", "enter":
 		m.viewMode = ViewTree
 		return m, m.loadItems

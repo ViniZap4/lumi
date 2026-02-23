@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vinizap/lumi/tui-client/domain"
 	"github.com/vinizap/lumi/tui-client/filesystem"
+	"github.com/vinizap/lumi/tui-client/theme"
 )
 
 // renderWithNavModal renders a 3-column navigation modal (parent | current | preview)
@@ -54,7 +55,7 @@ func (m Model) renderWithNavModal(base string) string {
 	centerCol := m.navCenterCol(centerW, colHeight)
 	rightCol := m.navPreviewCol(rightW, colHeight)
 
-	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(" | ")
+	sep := lipgloss.NewStyle().Foreground(theme.Current.Separator).Render(" | ")
 
 	columns := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -85,7 +86,7 @@ func (m Model) renderWithNavModal(base string) string {
 	modal.WriteString(header.String())
 	modal.WriteString("\n")
 	modal.WriteString(lipgloss.NewStyle().
-		Foreground(lipgloss.Color("236")).
+		Foreground(theme.Current.Separator).
 		Render(strings.Repeat("-", modalInner)))
 	modal.WriteString("\n")
 	modal.WriteString(columns)
@@ -94,7 +95,7 @@ func (m Model) renderWithNavModal(base string) string {
 
 	modalBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+		BorderForeground(theme.Current.Border).
 		Padding(1, 2).
 		Width(modalWidth).
 		Render(modal.String())
@@ -106,7 +107,7 @@ func (m Model) renderWithNavModal(base string) string {
 		lipgloss.Center,
 		modalBox,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+		lipgloss.WithWhitespaceForeground(theme.Current.OverlayBg),
 	)
 }
 
@@ -261,7 +262,7 @@ func (m Model) navPreviewCol(width, height int) string {
 			Render(fmt.Sprintf(" %s", item.Note.UpdatedAt.Format("Jan 2, 2006"))))
 		s.WriteString("\n")
 		s.WriteString(lipgloss.NewStyle().
-			Foreground(lipgloss.Color("236")).
+			Foreground(theme.Current.Separator).
 			Render(" " + strings.Repeat("-", width-3)))
 		s.WriteString("\n")
 
@@ -292,17 +293,17 @@ func (m Model) renderWithInputModal(base string) string {
 	modalWidth := 60
 
 	var s strings.Builder
-	s.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("226")).Render(title))
+	s.WriteString(lipgloss.NewStyle().Bold(true).Foreground(theme.Current.Warning).Render(title))
 	s.WriteString("\n\n")
 	s.WriteString("Title: ")
-	s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Render(m.inputValue + "_"))
+	s.WriteString(lipgloss.NewStyle().Foreground(theme.Current.Info).Render(m.inputValue + "_"))
 	s.WriteString("\n\n")
-	s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Enter to confirm  Esc to cancel"))
+	s.WriteString(lipgloss.NewStyle().Foreground(theme.Current.TextDim).Render("Enter to confirm  Esc to cancel"))
 
 	modal := lipgloss.NewStyle().
 		Width(modalWidth).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+		BorderForeground(theme.Current.Border).
 		Padding(1, 2).
 		Render(s.String())
 
@@ -313,7 +314,7 @@ func (m Model) renderWithInputModal(base string) string {
 		lipgloss.Center,
 		modal,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+		lipgloss.WithWhitespaceForeground(theme.Current.OverlayBg),
 	)
 }
 
@@ -326,7 +327,7 @@ func (m Model) renderSplitView() string {
 
 		s.WriteString(m.renderNoteInBox(m.fullNote, m.width, topHeight))
 		s.WriteString("\n")
-		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(strings.Repeat("-", m.width)))
+		s.WriteString(lipgloss.NewStyle().Foreground(theme.Current.Separator).Render(strings.Repeat("-", m.width)))
 		s.WriteString("\n")
 		s.WriteString(m.renderNoteInBox(m.splitNote, m.width, bottomHeight))
 	} else {
@@ -339,7 +340,7 @@ func (m Model) renderSplitView() string {
 		s.WriteString(lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			left,
-			lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render("|"),
+			lipgloss.NewStyle().Foreground(theme.Current.Separator).Render("|"),
 			right,
 		))
 	}
@@ -368,7 +369,7 @@ func (m Model) renderNoteInBox(note *domain.Note, width, height int) string {
 		boxWidth = 20
 	}
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStylePath(glamourStyle()),
 		glamour.WithWordWrap(boxWidth),
 	)
 

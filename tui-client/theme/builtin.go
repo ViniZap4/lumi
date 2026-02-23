@@ -1,0 +1,237 @@
+package theme
+
+import "github.com/charmbracelet/lipgloss"
+
+var builtins = map[string]Theme{
+	"tokyo-night": {
+		Name:       "tokyo-night",
+		IsDark:     true,
+		Primary:    lipgloss.Color("#7aa2f7"),
+		Secondary:  lipgloss.Color("#bb9af7"),
+		Accent:     lipgloss.Color("#7dcfff"),
+		Muted:      lipgloss.Color("#565f89"),
+		Background: lipgloss.Color("#1a1b26"),
+		SelectedBg: lipgloss.Color("#292e42"),
+		OverlayBg:  lipgloss.Color("#16161e"),
+		Text:       lipgloss.Color("#c0caf5"),
+		TextDim:    lipgloss.Color("#565f89"),
+		Border:     lipgloss.Color("#3b4261"),
+		Separator:  lipgloss.Color("#292e42"),
+		Error:      lipgloss.Color("#f7768e"),
+		Warning:    lipgloss.Color("#e0af68"),
+		Info:       lipgloss.Color("#7dcfff"),
+		LogoColors: [6]lipgloss.Color{"#7aa2f7", "#7dcfff", "#bb9af7", "#7aa2f7", "#7dcfff", "#bb9af7"},
+	},
+	"tokyo-day": {
+		Name:       "tokyo-day",
+		IsDark:     false,
+		Primary:    lipgloss.Color("#2e7de9"),
+		Secondary:  lipgloss.Color("#9854f1"),
+		Accent:     lipgloss.Color("#007197"),
+		Muted:      lipgloss.Color("#8990b3"),
+		Background: lipgloss.Color("#d5d6db"),
+		SelectedBg: lipgloss.Color("#c4c8da"),
+		OverlayBg:  lipgloss.Color("#e9e9ec"),
+		Text:       lipgloss.Color("#3760bf"),
+		TextDim:    lipgloss.Color("#8990b3"),
+		Border:     lipgloss.Color("#a8aecb"),
+		Separator:  lipgloss.Color("#c4c8da"),
+		Error:      lipgloss.Color("#f52a65"),
+		Warning:    lipgloss.Color("#8c6c3e"),
+		Info:       lipgloss.Color("#007197"),
+		LogoColors: [6]lipgloss.Color{"#2e7de9", "#007197", "#9854f1", "#2e7de9", "#007197", "#9854f1"},
+	},
+	"catppuccin-mocha": {
+		Name:       "catppuccin-mocha",
+		IsDark:     true,
+		Primary:    lipgloss.Color("#cba6f7"),
+		Secondary:  lipgloss.Color("#89b4fa"),
+		Accent:     lipgloss.Color("#f5c2e7"),
+		Muted:      lipgloss.Color("#6c7086"),
+		Background: lipgloss.Color("#1e1e2e"),
+		SelectedBg: lipgloss.Color("#313244"),
+		OverlayBg:  lipgloss.Color("#181825"),
+		Text:       lipgloss.Color("#cdd6f4"),
+		TextDim:    lipgloss.Color("#6c7086"),
+		Border:     lipgloss.Color("#45475a"),
+		Separator:  lipgloss.Color("#313244"),
+		Error:      lipgloss.Color("#f38ba8"),
+		Warning:    lipgloss.Color("#f9e2af"),
+		Info:       lipgloss.Color("#89dceb"),
+		LogoColors: [6]lipgloss.Color{"#cba6f7", "#f5c2e7", "#89b4fa", "#cba6f7", "#f5c2e7", "#89b4fa"},
+	},
+	"catppuccin-latte": {
+		Name:       "catppuccin-latte",
+		IsDark:     false,
+		Primary:    lipgloss.Color("#8839ef"),
+		Secondary:  lipgloss.Color("#1e66f5"),
+		Accent:     lipgloss.Color("#ea76cb"),
+		Muted:      lipgloss.Color("#9ca0b0"),
+		Background: lipgloss.Color("#ccd0da"),
+		SelectedBg: lipgloss.Color("#bcc0cc"),
+		OverlayBg:  lipgloss.Color("#e6e9ef"),
+		Text:       lipgloss.Color("#4c4f69"),
+		TextDim:    lipgloss.Color("#9ca0b0"),
+		Border:     lipgloss.Color("#acb0be"),
+		Separator:  lipgloss.Color("#bcc0cc"),
+		Error:      lipgloss.Color("#d20f39"),
+		Warning:    lipgloss.Color("#df8e1d"),
+		Info:       lipgloss.Color("#04a5e5"),
+		LogoColors: [6]lipgloss.Color{"#8839ef", "#ea76cb", "#1e66f5", "#8839ef", "#ea76cb", "#1e66f5"},
+	},
+	"dracula": {
+		Name:       "dracula",
+		IsDark:     true,
+		Primary:    lipgloss.Color("#bd93f9"),
+		Secondary:  lipgloss.Color("#8be9fd"),
+		Accent:     lipgloss.Color("#ff79c6"),
+		Muted:      lipgloss.Color("#6272a4"),
+		Background: lipgloss.Color("#282a36"),
+		SelectedBg: lipgloss.Color("#44475a"),
+		OverlayBg:  lipgloss.Color("#21222c"),
+		Text:       lipgloss.Color("#f8f8f2"),
+		TextDim:    lipgloss.Color("#6272a4"),
+		Border:     lipgloss.Color("#44475a"),
+		Separator:  lipgloss.Color("#44475a"),
+		Error:      lipgloss.Color("#ff5555"),
+		Warning:    lipgloss.Color("#f1fa8c"),
+		Info:       lipgloss.Color("#8be9fd"),
+		LogoColors: [6]lipgloss.Color{"#bd93f9", "#ff79c6", "#8be9fd", "#bd93f9", "#ff79c6", "#8be9fd"},
+	},
+	"lgbt-dark": {
+		Name:       "lgbt-dark",
+		IsDark:     true,
+		Primary:    lipgloss.Color("#ff6b6b"),
+		Secondary:  lipgloss.Color("#ffd93d"),
+		Accent:     lipgloss.Color("#6bcb77"),
+		Muted:      lipgloss.Color("#7f8c8d"),
+		Background: lipgloss.Color("#1a1a2e"),
+		SelectedBg: lipgloss.Color("#2d2d44"),
+		OverlayBg:  lipgloss.Color("#141425"),
+		Text:       lipgloss.Color("#ecf0f1"),
+		TextDim:    lipgloss.Color("#7f8c8d"),
+		Border:     lipgloss.Color("#3d3d5c"),
+		Separator:  lipgloss.Color("#2d2d44"),
+		Error:      lipgloss.Color("#ff6b6b"),
+		Warning:    lipgloss.Color("#ffd93d"),
+		Info:       lipgloss.Color("#4ecdc4"),
+		LogoColors: [6]lipgloss.Color{"#ff6b6b", "#ff8e53", "#ffd93d", "#6bcb77", "#4ecdc4", "#9b59b6"},
+	},
+	"lgbt-light": {
+		Name:       "lgbt-light",
+		IsDark:     false,
+		Primary:    lipgloss.Color("#e63946"),
+		Secondary:  lipgloss.Color("#f4a261"),
+		Accent:     lipgloss.Color("#2a9d8f"),
+		Muted:      lipgloss.Color("#8d99ae"),
+		Background: lipgloss.Color("#d6d6d6"),
+		SelectedBg: lipgloss.Color("#c8c8c8"),
+		OverlayBg:  lipgloss.Color("#edf2f4"),
+		Text:       lipgloss.Color("#264653"),
+		TextDim:    lipgloss.Color("#8d99ae"),
+		Border:     lipgloss.Color("#a8b2c1"),
+		Separator:  lipgloss.Color("#c8c8c8"),
+		Error:      lipgloss.Color("#e63946"),
+		Warning:    lipgloss.Color("#e76f51"),
+		Info:       lipgloss.Color("#2a9d8f"),
+		LogoColors: [6]lipgloss.Color{"#e63946", "#e76f51", "#f4a261", "#2a9d8f", "#264653", "#6a4c93"},
+	},
+	"trans-dark": {
+		Name:       "trans-dark",
+		IsDark:     true,
+		Primary:    lipgloss.Color("#5bcefa"),
+		Secondary:  lipgloss.Color("#f5a9b8"),
+		Accent:     lipgloss.Color("#ffffff"),
+		Muted:      lipgloss.Color("#7f8c8d"),
+		Background: lipgloss.Color("#1a1a2e"),
+		SelectedBg: lipgloss.Color("#2d2d44"),
+		OverlayBg:  lipgloss.Color("#141425"),
+		Text:       lipgloss.Color("#ecf0f1"),
+		TextDim:    lipgloss.Color("#7f8c8d"),
+		Border:     lipgloss.Color("#3d3d5c"),
+		Separator:  lipgloss.Color("#2d2d44"),
+		Error:      lipgloss.Color("#ff6b6b"),
+		Warning:    lipgloss.Color("#ffd93d"),
+		Info:       lipgloss.Color("#5bcefa"),
+		LogoColors: [6]lipgloss.Color{"#5bcefa", "#f5a9b8", "#ffffff", "#f5a9b8", "#5bcefa", "#ffffff"},
+	},
+	"trans-light": {
+		Name:       "trans-light",
+		IsDark:     false,
+		Primary:    lipgloss.Color("#5bcefa"),
+		Secondary:  lipgloss.Color("#f5a9b8"),
+		Accent:     lipgloss.Color("#333333"),
+		Muted:      lipgloss.Color("#8d99ae"),
+		Background: lipgloss.Color("#d6d6d6"),
+		SelectedBg: lipgloss.Color("#c8c8c8"),
+		OverlayBg:  lipgloss.Color("#edf2f4"),
+		Text:       lipgloss.Color("#2b2d42"),
+		TextDim:    lipgloss.Color("#8d99ae"),
+		Border:     lipgloss.Color("#a8b2c1"),
+		Separator:  lipgloss.Color("#c8c8c8"),
+		Error:      lipgloss.Color("#e63946"),
+		Warning:    lipgloss.Color("#e76f51"),
+		Info:       lipgloss.Color("#5bcefa"),
+		LogoColors: [6]lipgloss.Color{"#5bcefa", "#f5a9b8", "#333333", "#f5a9b8", "#5bcefa", "#333333"},
+	},
+	"obsidian": {
+		Name:       "obsidian",
+		IsDark:     true,
+		Primary:    lipgloss.Color("#a882ff"),
+		Secondary:  lipgloss.Color("#7c6f9e"),
+		Accent:     lipgloss.Color("#c792ea"),
+		Muted:      lipgloss.Color("#5c5c5c"),
+		Background: lipgloss.Color("#1e1e1e"),
+		SelectedBg: lipgloss.Color("#2d2d2d"),
+		OverlayBg:  lipgloss.Color("#161616"),
+		Text:       lipgloss.Color("#dcddde"),
+		TextDim:    lipgloss.Color("#5c5c5c"),
+		Border:     lipgloss.Color("#3c3c3c"),
+		Separator:  lipgloss.Color("#2d2d2d"),
+		Error:      lipgloss.Color("#e05561"),
+		Warning:    lipgloss.Color("#d19a66"),
+		Info:       lipgloss.Color("#56b6c2"),
+		LogoColors: [6]lipgloss.Color{"#a882ff", "#c792ea", "#7c6f9e", "#a882ff", "#c792ea", "#7c6f9e"},
+	},
+}
+
+// DarkThemeNames returns the names of all built-in dark themes.
+func DarkThemeNames() []string {
+	var names []string
+	for _, t := range allOrder {
+		if builtins[t].IsDark {
+			names = append(names, t)
+		}
+	}
+	return names
+}
+
+// LightThemeNames returns the names of all built-in light themes.
+func LightThemeNames() []string {
+	var names []string
+	for _, t := range allOrder {
+		if !builtins[t].IsDark {
+			names = append(names, t)
+		}
+	}
+	return names
+}
+
+// AllThemeNames returns all built-in theme names in a stable order.
+func AllThemeNames() []string {
+	return append([]string{}, allOrder...)
+}
+
+// allOrder defines the stable iteration order for themes.
+var allOrder = []string{
+	"tokyo-night",
+	"tokyo-day",
+	"catppuccin-mocha",
+	"catppuccin-latte",
+	"dracula",
+	"lgbt-dark",
+	"lgbt-light",
+	"trans-dark",
+	"trans-light",
+	"obsidian",
+}

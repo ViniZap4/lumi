@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/vinizap/lumi/tui-client/theme"
 )
 
 func (m Model) renderWithSearchModal(base string) string {
@@ -187,7 +188,7 @@ func (m Model) renderWithInFileSearch() string {
 				before := line[:idx]
 				match := lipgloss.NewStyle().
 					Background(accentColor).
-					Foreground(lipgloss.Color("0")).
+					Foreground(theme.Current.OverlayBg).
 					Render(line[idx : idx+len(m.searchQuery)])
 				after := line[idx+len(m.searchQuery):]
 				line = before + match + after
