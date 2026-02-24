@@ -89,12 +89,36 @@ func ListFolders(root string) ([]*domain.Folder, error) {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		
+
 		folders = append(folders, &domain.Folder{
 			Name: entry.Name(),
-			Path: filepath.Join(root, entry.Name()),
+			Path: entry.Name(),
 		})
 	}
-	
+
 	return folders, nil
+}
+
+// FindNotePath searches recursively under rootDir for a markdown file
+// whose frontmatter ID matches the given id. Returns the full file path.
+func FindNotePath(rootDir, id string) (string, error) {
+	var found string
+	err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+		note, err := ReadNote(path)
+		if err == nil && note.ID == id {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if found == "" {
+		return "", fmt.Errorf("note not found: %s", id)
+	}
+	return found, nil
 }

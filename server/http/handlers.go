@@ -4,12 +4,11 @@ package http
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/vinizap/lumi/server/domain"
 	"github.com/vinizap/lumi/server/filesystem"
 	"github.com/vinizap/lumi/server/ws"
 )
@@ -63,27 +62,20 @@ func (s *Server) HandleGetNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Search for note by ID in all subdirectories
-	var foundNote *domain.Note
-	filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
-			return nil
-		}
-		note, err := filesystem.ReadNote(path)
-		if err == nil && note.ID == id {
-			foundNote = note
-			return filepath.SkipAll
-		}
-		return nil
-	})
-
-	if foundNote == nil {
+	notePath, err := filesystem.FindNotePath(s.rootDir, id)
+	if err != nil {
 		http.Error(w, "Note not found", http.StatusNotFound)
 		return
 	}
 
+	note, err := filesystem.ReadNote(notePath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(foundNote)
+	json.NewEncoder(w).Encode(note)
 }
 
 func (s *Server) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
@@ -127,10 +119,15 @@ func (s *Server) HandleUpdateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notePath := filepath.Join(s.rootDir, id+".md")
+	notePath, err := filesystem.FindNotePath(s.rootDir, id)
+	if err != nil {
+		http.Error(w, "Note not found", http.StatusNotFound)
+		return
+	}
+
 	note, err := filesystem.ReadNote(notePath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -148,6 +145,7 @@ func (s *Server) HandleUpdateNote(w http.ResponseWriter, r *http.Request) {
 	note.Title = req.Title
 	note.Content = req.Content
 	note.Tags = req.Tags
+	note.UpdatedAt = time.Now()
 
 	if err := filesystem.WriteNote(note); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -167,10 +165,15 @@ func (s *Server) HandleDeleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notePath := filepath.Join(s.rootDir, id+".md")
+	notePath, err := filesystem.FindNotePath(s.rootDir, id)
+	if err != nil {
+		http.Error(w, "Note not found", http.StatusNotFound)
+		return
+	}
+
 	note, err := filesystem.ReadNote(notePath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
