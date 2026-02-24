@@ -88,6 +88,7 @@ VITE_LUMI_SERVER_URL=http://localhost:8080 npm run dev
 - `n` - Create new note
 - `d` - Delete selected note (with confirmation)
 - `r` - Rename note
+- `c` - Open settings (themes, editor, display options)
 - `?` - Show help
 - `q` - Quit
 
@@ -167,6 +168,47 @@ Or regular Markdown links: [Another Note](./another-note.md)
 - `Ctrl+N` - New note
 - `Ctrl+F` - Search notes
 - `Esc` - Close dialogs
+
+## Settings & Themes
+
+Press `c` from any view to open the settings screen. The settings view uses a split layout:
+
+```
+┌─ Settings ──────────────────┐│┌─ Note Preview ──────────────────────┐
+│                             ││                                      │
+│   Lumi Settings             ││  Sample Note          #demo #theme   │
+│                             ││  ──────────────────────────────────── │
+│   Theme                     ││  # Heading 1                         │
+│     Mode         < dark >   ││  ## Heading 2                        │
+│     Dark theme   < tokyo >  ││  ### Heading 3                       │
+│     Light theme  < latte >  ││                                      │
+│                             ││  Normal text with **bold**, *italic*. │
+│   Editor                    ││  A `code span` and a [link](url).   │
+│     Command      nvim       ││                                      │
+│     Open in editor  ->      ││  - List item one                     │
+│                             ││  - Another with [[wikilink]]         │
+│   Display                   ││                                      │
+│     Line numbers < off >    ││  > Blockquote text here              │
+│     Cursor style < block >  ││                                      │
+│                             ││  ```                                 │
+│   ██ ██ ██ ██ ██ ██ ██ ██   ││  code block line                    │
+│                             ││  ```                                 │
+│   j/k move  h/l change      ││                                      │
+└─────────────────────────────┘│└──────────────────────────────────────┘
+```
+
+- **Left panel**: Settings categories (Theme, Editor, Display, Search) with cycle/action items
+- **Right panel**: A full sample note rendered with the current theme, showing headings, bold, italic, code, links, wikilinks, lists, blockquotes, and code blocks
+- **Color swatches**: Quick visual reference for all theme colors
+
+### Settings Keybindings
+
+- `j/k` - Move between options
+- `h/l` - Cycle through values (switch themes, toggle options)
+- `enter` - Activate action items (e.g. open editor)
+- `esc` - Return to previous view
+
+The right-side preview updates live as you cycle through themes, so you can immediately see how each theme renders markdown content.
 
 ## Configuration
 

@@ -17,6 +17,9 @@ A local-first, Markdown-based note-taking system with beautiful TUI and web clie
   - Live preview of results
 - **Split Views** - Horizontal (s) and vertical (S) splits
 - **External Editor** - Edit in $EDITOR (e key)
+- **Settings & Themes** - Config view (c key) with live full-page note preview
+  - Multiple dark/light themes with real-time switching
+  - Split layout: settings on the left, themed note preview on the right
 
 ### Web Client
 - **Modern Dark Theme** - Clean, professional interface
@@ -70,6 +73,7 @@ brew install timg  # or chafa, or viu
 - `/` - Search modal
 - `e` - Edit in external editor
 - `s/S` - Horizontal/vertical split
+- `c` - Settings (theme, editor, display options)
 - `esc` - Go back / exit mode
 - `q` - Quit
 
@@ -136,8 +140,16 @@ npm run dev
 - `t` - Tree modal
 - `/` - Search modal
 - `s/S` - Splits
+- `c` - Settings
 - `e` - External editor
 - `esc` - Back
+
+### Settings View (c)
+- `j/k` - Move between options
+- `h/l` - Cycle option values (themes, toggles)
+- `enter` - Select action items
+- `esc` - Return to previous view
+- Live note preview on the right updates as you change themes
 
 ### Search Modal (/)
 - Type - Search query
@@ -234,7 +246,7 @@ Link to other notes: [[other-note-id]]
 - [ ] End-to-end encryption
 - [ ] Git sync
 - [ ] Plugin system
-- [ ] Themes
+- [x] Themes
 
 ## 📄 License
 

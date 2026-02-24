@@ -29,6 +29,8 @@ lumi is a **local-first note-taking ecosystem** with three main components:
    - Reads/writes directly to filesystem
    - Opens notes in $EDITOR (nvim fallback)
    - Vim-like keybindings
+   - Theme engine with multiple dark/light themes
+   - Config view with split-layout live preview
 
 2. **Server** (`server/`)
    - HTTP API for CRUD operations
@@ -115,10 +117,13 @@ lumi/
 │   ├── domain/             # Core types (Note, Folder)
 │   ├── filesystem/         # File I/O, frontmatter parsing
 │   ├── ui/                 # Bubbletea models and views
-│   │   ├── app.go          # Main app model
-│   │   ├── folders.go      # Folder panel
-│   │   ├── notes.go        # Notes list panel
-│   │   └── styles.go       # Lipgloss styles
+│   │   ├── simple.go       # Main model, Update, View routing
+│   │   ├── view_tree.go    # Tree file browser (3-column split)
+│   │   ├── view_note.go    # Full note display, markdown rendering
+│   │   ├── view_config.go  # Settings view (split: config + live preview)
+│   │   ├── inline.go       # Per-character inline markdown classification
+│   │   └── styles.go       # Lipgloss styles, theme application
+│   ├── theme/              # Theme definitions and registry
 │   └── editor/             # External editor integration
 ├── server/                 # API server
 │   ├── main.go
@@ -262,8 +267,22 @@ refactor: extract frontmatter parsing to separate package
 - **Filesystem**: Unit tests for parsing and file operations
 - **Web**: Component tests with Vitest
 
+## TUI Views & Layout Patterns
+
+The TUI uses split-layout patterns across multiple views:
+
+- **Tree view** (`view_tree.go`): 3-column split — parent folders | current directory | preview
+- **Note view** (`view_note.go`): Full-width with header, scrollable content, footer/status bar
+- **Config view** (`view_config.go`): 2-column split — settings (~38%) | live note preview (~62%)
+
+The config view reuses the same markdown rendering pipeline as the note view (`mdLineStyle` → `classifyInline` → `renderContentLine`), so the preview is pixel-accurate to how real notes render. When the user cycles themes, both columns re-render with updated theme colors immediately.
+
+Columns are joined via `lipgloss.JoinHorizontal(lipgloss.Top, ...)` with a themed `" │ "` separator built as a fixed-height block of repeated separator characters.
+
 ## Future Enhancements
 
+- [x] Theme engine with multiple dark/light themes
+- [x] Config view with live theme preview
 - [ ] Image display in terminal (Kitty protocol)
 - [ ] Full-text search
 - [ ] Note templates
