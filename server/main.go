@@ -54,7 +54,16 @@ func main() {
 		}
 	}
 
-	mux.HandleFunc("/api/folders", corsMiddleware(auth.Middleware(server.HandleFolders)))
+	mux.HandleFunc("/api/folders", corsMiddleware(auth.Middleware(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			server.HandleFolders(w, r)
+		case http.MethodPost:
+			server.HandleCreateFolder(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})))
 	mux.HandleFunc("/api/notes", corsMiddleware(auth.Middleware(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -74,6 +83,17 @@ func main() {
 			server.HandleUpdateNote(w, r)
 		case http.MethodDelete:
 			server.HandleDeleteNote(w, r)
+		case http.MethodPost:
+			path := strings.TrimPrefix(r.URL.Path, "/api/notes/")
+			if strings.HasSuffix(path, "/move") {
+				server.HandleMoveNote(w, r)
+			} else if strings.HasSuffix(path, "/copy") {
+				server.HandleCopyNote(w, r)
+			} else if strings.HasSuffix(path, "/rename") {
+				server.HandleRenameNote(w, r)
+			} else {
+				http.Error(w, "Not found", http.StatusNotFound)
+			}
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}

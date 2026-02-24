@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/vinizap/lumi/server/domain"
 	"gopkg.in/yaml.v3"
@@ -121,4 +122,65 @@ func FindNotePath(rootDir, id string) (string, error) {
 		return "", fmt.Errorf("note not found: %s", id)
 	}
 	return found, nil
+}
+
+// MoveNote moves a note file to a different directory.
+func MoveNote(oldPath, newDir string) (*domain.Note, error) {
+	newPath := filepath.Join(newDir, filepath.Base(oldPath))
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return nil, fmt.Errorf("failed to move note: %w", err)
+	}
+	note, err := ReadNote(newPath)
+	if err != nil {
+		return nil, err
+	}
+	note.Path = newPath
+	note.UpdatedAt = time.Now()
+	if err := WriteNote(note); err != nil {
+		return nil, err
+	}
+	return note, nil
+}
+
+// CopyNote duplicates a note with a new ID and title into destDir.
+func CopyNote(srcPath, destDir, newID, newTitle string) (*domain.Note, error) {
+	src, err := ReadNote(srcPath)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	note := &domain.Note{
+		ID:        newID,
+		Title:     newTitle,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Tags:      src.Tags,
+		Path:      filepath.Join(destDir, newID+".md"),
+		Content:   src.Content,
+	}
+	if err := WriteNote(note); err != nil {
+		return nil, err
+	}
+	return note, nil
+}
+
+// RenameNote changes a note's ID and title, moving the file accordingly.
+func RenameNote(oldPath, newID, newTitle string) (*domain.Note, error) {
+	note, err := ReadNote(oldPath)
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Dir(oldPath)
+	newPath := filepath.Join(dir, newID+".md")
+	note.ID = newID
+	note.Title = newTitle
+	note.Path = newPath
+	note.UpdatedAt = time.Now()
+	if err := WriteNote(note); err != nil {
+		return nil, err
+	}
+	if oldPath != newPath {
+		os.Remove(oldPath)
+	}
+	return note, nil
 }

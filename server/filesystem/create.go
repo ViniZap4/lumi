@@ -33,3 +33,7 @@ func CreateNote(dir, id, title string) (*domain.Note, error) {
 func DeleteNote(path string) error {
 	return os.Remove(path)
 }
+
+func CreateFolder(rootDir, name string) error {
+	return os.MkdirAll(filepath.Join(rootDir, name), 0755)
+}
