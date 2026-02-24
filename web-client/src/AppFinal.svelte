@@ -319,8 +319,11 @@
     localStorage.setItem('lumi-editor-settings', JSON.stringify({ vimEnabled, jjEscape, relativeNumbers }));
   }
 
-  function handleWsMessage(msg) {
+  async function handleWsMessage(msg) {
     if (!msg || !msg.type || !msg.note) return;
+
+    // Invalidate folder preview cache on any change
+    folderPreviewCache = {};
 
     if (msg.type === 'note_updated') {
       // Skip if user is editing this note to avoid overwriting their changes
@@ -337,16 +340,13 @@
         title = msg.note.title || '';
         content = msg.note.content || '';
       }
-      buildItems();
     } else if (msg.type === 'note_created') {
       // Add to allNotes if not already present
       if (!allNotes.find(n => n.id === msg.note.id)) {
         allNotes = [...allNotes, msg.note];
-        buildItems();
       }
     } else if (msg.type === 'note_deleted') {
       allNotes = allNotes.filter(n => n.id !== msg.note.id);
-      buildItems();
       // Clear selection if the deleted note was selected
       if (selectedNote && msg.note.id === selectedNote.id) {
         selectedNote = null;
@@ -355,6 +355,16 @@
         if (viewMode === 'note') viewMode = 'tree';
       }
     }
+
+    // Refresh subfolder notes if currently in a subfolder
+    if (currentDir !== '/') {
+      try {
+        const path = currentDir.slice(1);
+        currentDirNotes = await getNotes(path) || [];
+      } catch {}
+    }
+
+    buildItems();
   }
 
   onMount(async () => {

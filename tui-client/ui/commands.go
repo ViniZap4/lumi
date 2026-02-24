@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/vinizap/lumi/tui-client/domain"
 	"github.com/vinizap/lumi/tui-client/filesystem"
+	"github.com/vinizap/lumi/tui-client/sync"
 	"github.com/vinizap/lumi/tui-client/theme"
 )
 
@@ -34,7 +35,24 @@ type searchResultsMsg struct {
 	results []Item
 }
 
+// syncEventMsg wraps a sync event from the WebSocket connection.
+type syncEventMsg struct {
+	event sync.Event
+}
+
 // --- Commands ---
+
+// waitForSyncEvent blocks until a sync event is received from the server.
+func (m Model) waitForSyncEvent() tea.Msg {
+	if m.syncClient == nil {
+		return nil
+	}
+	evt, ok := <-m.syncClient.Events()
+	if !ok {
+		return nil
+	}
+	return syncEventMsg{event: evt}
+}
 
 func (m Model) loadItems() tea.Msg {
 	var items []Item

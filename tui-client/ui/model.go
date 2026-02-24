@@ -4,6 +4,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/vinizap/lumi/tui-client/config"
 	"github.com/vinizap/lumi/tui-client/domain"
+	"github.com/vinizap/lumi/tui-client/sync"
 	"github.com/vinizap/lumi/tui-client/theme"
 )
 
@@ -55,8 +56,9 @@ type Item struct {
 // Model is the main Bubbletea model for the TUI.
 type Model struct {
 	// Core state
-	rootDir    string
-	currentDir string
+	rootDir      string
+	currentDir   string
+	folderConfig *config.FolderConfig
 	items      []Item
 	cursor     int
 	width      int
@@ -119,6 +121,14 @@ type Model struct {
 	inputMode  string
 	inputValue string
 
+	// Confirm modal (delete confirmation)
+	showConfirm       bool
+	confirmMsg        string
+	pendingDeleteNote *domain.Note
+
+	// Real-time sync
+	syncClient *sync.Client
+
 	// Config view state
 	configCursor int
 	configItems  []ConfigItem
@@ -134,19 +144,24 @@ func NewModel(rootDir string) Model {
 	theme.Resolve(cfg.ThemeMode, cfg.DarkTheme, cfg.LightTheme)
 	ApplyTheme()
 
+	folderCfg := config.LoadFolderConfig(rootDir)
+	syncCli := sync.NewClient(folderCfg)
+
 	renderer, _ := glamour.NewTermRenderer(
 		glamour.WithStylePath(glamourStyle()),
 		glamour.WithWordWrap(100),
 	)
 
 	return Model{
-		rootDir:    rootDir,
-		currentDir: rootDir,
-		navDir:     rootDir,
-		items:      []Item{},
-		viewMode:   ViewHome,
-		renderer:   renderer,
-		searchType: cfg.SearchType,
+		rootDir:      rootDir,
+		currentDir:   rootDir,
+		navDir:       rootDir,
+		items:        []Item{},
+		viewMode:     ViewHome,
+		renderer:     renderer,
+		searchType:   cfg.SearchType,
+		folderConfig: folderCfg,
+		syncClient:   syncCli,
 	}
 }
 

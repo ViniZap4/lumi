@@ -5,6 +5,30 @@ import (
 	"github.com/vinizap/lumi/tui-client/filesystem"
 )
 
+func (m Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "enter":
+		if m.pendingDeleteNote != nil {
+			if err := filesystem.DeleteNote(m.pendingDeleteNote); err == nil {
+				m.showConfirm = false
+				m.pendingDeleteNote = nil
+				m.confirmMsg = ""
+				return m, m.loadItems
+			}
+		}
+		m.showConfirm = false
+		m.pendingDeleteNote = nil
+		m.confirmMsg = ""
+		return m, nil
+	case "n", "esc":
+		m.showConfirm = false
+		m.pendingDeleteNote = nil
+		m.confirmMsg = ""
+		return m, nil
+	}
+	return m, nil
+}
+
 func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":

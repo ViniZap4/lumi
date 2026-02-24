@@ -56,9 +56,10 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "d":
 		if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
-			if err := filesystem.DeleteNote(m.items[m.cursor].Note); err == nil {
-				return m, m.loadItems
-			}
+			m.pendingDeleteNote = m.items[m.cursor].Note
+			m.confirmMsg = "Delete \"" + m.pendingDeleteNote.Title + "\"?"
+			m.showConfirm = true
+			return m, nil
 		}
 	case "r":
 		if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {

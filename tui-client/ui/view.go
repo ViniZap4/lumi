@@ -16,8 +16,10 @@ func (m Model) View() string {
 
 	var content string
 
-	// Input modal overlay (highest priority)
-	if m.showInput {
+	// Confirm modal overlay (highest priority)
+	if m.showConfirm {
+		content = m.renderWithConfirmModal(m.renderBase())
+	} else if m.showInput {
 		content = m.renderWithInputModal(m.renderBase())
 	} else if m.showSearch && !m.inFileSearch {
 		// Global search modal overlay

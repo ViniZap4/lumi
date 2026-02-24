@@ -286,6 +286,36 @@ func (m Model) navPreviewCol(width, height int) string {
 		Render(s.String())
 }
 
+func (m Model) renderWithConfirmModal(base string) string {
+	modalWidth := 60
+
+	var s strings.Builder
+	s.WriteString(lipgloss.NewStyle().Bold(true).Foreground(theme.Current.Warning).Render("Confirm"))
+	s.WriteString("\n\n")
+	s.WriteString(lipgloss.NewStyle().Foreground(theme.Current.Text).Render(m.confirmMsg))
+	s.WriteString("\n\n")
+	s.WriteString(lipgloss.NewStyle().Foreground(theme.Current.TextDim).Render("y/Enter to confirm  n/Esc to cancel"))
+
+	modal := lipgloss.NewStyle().
+		Width(modalWidth).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.Current.Border).
+		Background(theme.Current.Background).
+		Padding(1, 2).
+		Render(s.String())
+
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		modal,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(theme.Current.OverlayBg),
+		lipgloss.WithWhitespaceBackground(theme.Current.OverlayBg),
+	)
+}
+
 func (m Model) renderWithInputModal(base string) string {
 	title := "Create Note"
 	if m.inputMode == "rename" {

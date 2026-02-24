@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/vinizap/lumi/tui-client/filesystem"
 )
 
 // animTickMsg drives the home screen animation.
@@ -19,7 +20,12 @@ func animTick() tea.Cmd {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadItems, animTick())
+	cmds := []tea.Cmd{m.loadItems, animTick()}
+	if m.syncClient != nil {
+		m.syncClient.Start()
+		cmds = append(cmds, m.waitForSyncEvent)
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -61,7 +67,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 		return m, nil
 
+	case syncEventMsg:
+		// A note was changed on the server — reload items.
+		// If viewing a note that was updated, re-read it.
+		if m.fullNote != nil && msg.event.Type == "note_updated" {
+			reloaded, err := filesystem.ReadNote(m.fullNote.Path)
+			if err == nil {
+				m.openNote(reloaded)
+			}
+		}
+		return m, tea.Batch(m.loadItems, m.waitForSyncEvent)
+
 	case tea.KeyMsg:
+		if m.showConfirm {
+			return m.updateConfirm(msg)
+		}
 		if m.showInput {
 			return m.updateInput(msg)
 		}
