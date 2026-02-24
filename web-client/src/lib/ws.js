@@ -1,8 +1,11 @@
 // web-client/src/lib/ws.js
 const WS_URL = (import.meta.env.VITE_LUMI_SERVER_URL || 'http://localhost:8080').replace('http', 'ws');
 
+let ws = null;
+let reconnectTimer = null;
+
 export function connectWebSocket(onMessage) {
-  const ws = new WebSocket(`${WS_URL}/ws`);
+  ws = new WebSocket(`${WS_URL}/ws`);
 
   ws.onopen = () => {
     console.log('WebSocket connected');
@@ -20,8 +23,20 @@ export function connectWebSocket(onMessage) {
 
   ws.onclose = () => {
     console.log('WebSocket disconnected, reconnecting...');
-    setTimeout(() => connectWebSocket(onMessage), 3000);
+    reconnectTimer = setTimeout(() => connectWebSocket(onMessage), 3000);
   };
 
   return ws;
+}
+
+export function disconnect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (ws) {
+    ws.onclose = null; // prevent auto-reconnect
+    ws.close();
+    ws = null;
+  }
 }

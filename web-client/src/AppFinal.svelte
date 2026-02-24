@@ -1,6 +1,7 @@
 <script>
   import { onMount, afterUpdate, onDestroy } from 'svelte';
   import { getNotes, getFolders, getNote, updateNote } from './lib/api.js';
+  import { connectWebSocket, disconnect as disconnectWs } from './lib/ws.js';
   import { themes, themeOrder, darkThemeOrder, lightThemeOrder, applyTheme, resolveTheme, loadThemeSettings, saveThemeSettings, watchSystemTheme } from './lib/themes.js';
   import { renderMarkdown } from './lib/markdown.js';
   import { createEditor, destroyEditor, updateTheme as updateEditorTheme, getVimMode, getCursorPosition } from './lib/editor.js';
@@ -133,6 +134,44 @@
     localStorage.setItem('lumi-editor-settings', JSON.stringify({ vimEnabled, jjEscape, relativeNumbers }));
   }
 
+  function handleWsMessage(msg) {
+    if (!msg || !msg.type || !msg.note) return;
+
+    if (msg.type === 'note_updated') {
+      // Skip if user is editing this note to avoid overwriting their changes
+      if (editMode && selectedNote && msg.note.id === selectedNote.id) return;
+
+      const idx = allNotes.findIndex(n => n.id === msg.note.id);
+      if (idx !== -1) {
+        allNotes[idx] = msg.note;
+        allNotes = allNotes; // trigger reactivity
+      }
+      // Update selected note if it matches
+      if (selectedNote && msg.note.id === selectedNote.id) {
+        selectedNote = msg.note;
+        title = msg.note.title || '';
+        content = msg.note.content || '';
+      }
+      buildItems();
+    } else if (msg.type === 'note_created') {
+      // Add to allNotes if not already present
+      if (!allNotes.find(n => n.id === msg.note.id)) {
+        allNotes = [...allNotes, msg.note];
+        buildItems();
+      }
+    } else if (msg.type === 'note_deleted') {
+      allNotes = allNotes.filter(n => n.id !== msg.note.id);
+      buildItems();
+      // Clear selection if the deleted note was selected
+      if (selectedNote && msg.note.id === selectedNote.id) {
+        selectedNote = null;
+        content = '';
+        title = '';
+        if (viewMode === 'note') viewMode = 'tree';
+      }
+    }
+  }
+
   onMount(async () => {
     const settings = loadThemeSettings();
     themeMode = settings.mode;
@@ -142,11 +181,13 @@
     setupSystemWatch();
     loadEditorSettings();
     await loadAll();
+    connectWebSocket(handleWsMessage);
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   });
 
   onDestroy(() => {
+    disconnectWs();
     if (cleanupSystemWatch) cleanupSystemWatch();
     if (editorView) destroyEditor(editorView);
     if (vimPollInterval) clearInterval(vimPollInterval);
