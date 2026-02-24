@@ -40,6 +40,11 @@ type syncEventMsg struct {
 	event sync.Event
 }
 
+// editorDoneMsg is sent after the editor exits so the note is re-read from disk.
+type editorDoneMsg struct {
+	notePath string
+}
+
 // --- Commands ---
 
 // waitForSyncEvent blocks until a sync event is received from the server.

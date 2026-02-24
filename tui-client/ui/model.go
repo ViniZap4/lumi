@@ -34,6 +34,7 @@ const (
 	ConfigHeader ConfigItemKind = iota // section label, not selectable
 	ConfigCycle                        // h/l cycles options
 	ConfigAction                       // enter triggers action
+	ConfigInput                        // enter opens input modal to edit value
 )
 
 // ConfigItem represents a single row in the config view.

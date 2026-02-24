@@ -111,6 +111,28 @@ func (m Model) renderConfigLeft(width, height int) string {
 						Foreground(t.Muted).
 						Render(arrow)
 			}
+
+		case ConfigInput:
+			label := fmt.Sprintf("    %-*s", maxLabelWidth+2, item.Label)
+			value := fmt.Sprintf("[%s]", item.Value)
+
+			if i == m.configCursor {
+				line = lipgloss.NewStyle().
+					Foreground(t.Accent).
+					Background(t.SelectedBg).
+					Render(label) +
+					lipgloss.NewStyle().
+						Foreground(t.Secondary).
+						Background(t.SelectedBg).
+						Render(value)
+			} else {
+				line = lipgloss.NewStyle().
+					Foreground(t.Text).
+					Render(label) +
+					lipgloss.NewStyle().
+						Foreground(t.Muted).
+						Render(value)
+			}
 		}
 
 		s.WriteString(line)
@@ -210,9 +232,16 @@ func (m Model) renderConfigPreview(width, height int) string {
 		"",
 		"> Blockquote text here",
 		"",
+		"```go",
+		"func main() {",
+		"    fmt.Println(\"hello\")",
+		"}",
 		"```",
-		"code block line",
-		"```",
+		"",
+		"| Column A | Column B |",
+		"| -------- | -------- |",
+		"| Cell 1   | Cell 2   |",
+		"| Cell 3   | Cell 4   |",
 		"",
 		"---",
 	}
@@ -226,6 +255,14 @@ func (m Model) renderConfigPreview(width, height int) string {
 			inlineCls = classifyInline(line)
 		}
 		rendered := m.renderContentLine(line, style, inlineCls, visualRange{}, lipgloss.Color(""), false)
+		// Pad code block lines with background
+		if inCode {
+			visWidth := lipgloss.Width(rendered)
+			pad := width - 4 - visWidth
+			if pad > 0 {
+				rendered += lipgloss.NewStyle().Background(t.SelectedBg).Render(strings.Repeat(" ", pad))
+			}
+		}
 		s.WriteString("  ")
 		s.WriteString(rendered)
 		s.WriteString("\n")

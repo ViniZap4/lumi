@@ -140,6 +140,15 @@ func (m Model) renderFullNote() string {
 		}
 		styledLine := m.renderContentLine(line, style, inlineCls, activeRange, selBg, isCursorLine)
 
+		// Pad code block lines with background to full width
+		if inCode && !isCursorLine && !activeRange.active {
+			visWidth := lipgloss.Width(styledLine)
+			pad := m.width - 2 - visWidth
+			if pad > 0 {
+				styledLine += lipgloss.NewStyle().Background(theme.Current.SelectedBg).Render(strings.Repeat(" ", pad))
+			}
+		}
+
 		// Pad visual-selected lines to full width so the highlight spans the entire row.
 		if activeRange.active && activeRange.full && !isCursorLine {
 			visWidth := lipgloss.Width(styledLine)
@@ -226,8 +235,15 @@ func codeBlockLines(lines []string) map[int]bool {
 
 // mdLineStyle returns the theme-aware style for a markdown line.
 func mdLineStyle(line string, inCodeBlock bool) lipgloss.Style {
+	t := theme.Current
 	if inCodeBlock {
-		return lipgloss.NewStyle().Foreground(theme.Current.TextDim)
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			// Fence lines: dim with background
+			return lipgloss.NewStyle().Foreground(t.Muted).Background(t.SelectedBg)
+		}
+		// Code content: accent color with background
+		return lipgloss.NewStyle().Foreground(t.Accent).Background(t.SelectedBg)
 	}
 	trimmed := strings.TrimSpace(line)
 	switch {
@@ -243,10 +259,17 @@ func mdLineStyle(line string, inCodeBlock bool) lipgloss.Style {
 	case strings.HasPrefix(trimmed, "> "):
 		return lipgloss.NewStyle().Italic(true).Foreground(mutedColor)
 	case trimmed == "---" || trimmed == "***" || trimmed == "___":
-		return lipgloss.NewStyle().Foreground(theme.Current.Separator)
+		return lipgloss.NewStyle().Foreground(t.Separator)
+	case isTableLine(trimmed):
+		return lipgloss.NewStyle().Foreground(t.Text)
 	default:
-		return lipgloss.NewStyle().Foreground(theme.Current.Text)
+		return lipgloss.NewStyle().Foreground(t.Text)
 	}
+}
+
+// isTableLine detects markdown table rows (e.g. "| a | b |" or "| --- | --- |").
+func isTableLine(trimmed string) bool {
+	return strings.HasPrefix(trimmed, "|") && strings.HasSuffix(trimmed, "|") && len(trimmed) > 2
 }
 
 // visualRangeForLine computes the column range selected on a given raw line.

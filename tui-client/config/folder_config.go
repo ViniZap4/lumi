@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,6 +48,22 @@ func LoadFolderConfig(rootDir string) *FolderConfig {
 	}
 
 	return cfg
+}
+
+// SaveFolderConfig writes the folder config to <rootDir>/.lumi/config.yaml.
+func SaveFolderConfig(rootDir string, cfg *FolderConfig) error {
+	lumiDir := filepath.Join(rootDir, ".lumi")
+	if err := os.MkdirAll(lumiDir, 0755); err != nil {
+		return err
+	}
+
+	content := fmt.Sprintf(`# Lumi Folder Config
+# Server connection (for TUI real-time sync)
+server_url: %s
+server_token: %s
+`, cfg.ServerURL, cfg.ServerToken)
+
+	return os.WriteFile(filepath.Join(lumiDir, "config.yaml"), []byte(content), 0644)
 }
 
 // EnsureLumiDir creates the .lumi/ directory in rootDir if it doesn't exist.

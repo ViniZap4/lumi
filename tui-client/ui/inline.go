@@ -41,6 +41,7 @@ func shouldClassifyInline(line string, inCode bool) bool {
 	case trimmed == "---" || trimmed == "***" || trimmed == "___":
 		return false
 	}
+	// Table lines get inline classification for pipe delimiters
 	return true
 }
 
@@ -56,6 +57,39 @@ func classifyInline(line string) []int {
 	}
 	cls := make([]int, n)
 	used := make([]bool, n)
+
+	// --- Table lines ---
+	trimmedLine := strings.TrimSpace(string(runes))
+	if strings.HasPrefix(trimmedLine, "|") && strings.HasSuffix(trimmedLine, "|") && n > 2 {
+		// Check if separator row (| --- | --- |)
+		isSepRow := true
+		inner := trimmedLine[1 : len(trimmedLine)-1]
+		for _, cell := range strings.Split(inner, "|") {
+			cell = strings.TrimSpace(cell)
+			if cell == "" {
+				continue
+			}
+			cleaned := strings.Trim(cell, ":-")
+			if cleaned != "" {
+				isSepRow = false
+				break
+			}
+		}
+		if isSepRow {
+			// Entire separator row is dim
+			for i := range cls {
+				cls[i] = clsDim
+			}
+			return cls
+		}
+		// Regular table row: style pipe characters as dim
+		for i, r := range runes {
+			if r == '|' {
+				cls[i] = clsDim
+				used[i] = true
+			}
+		}
+	}
 
 	// --- List markers at line start ---
 	ls := 0

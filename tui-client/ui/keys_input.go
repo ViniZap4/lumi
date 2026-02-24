@@ -37,18 +37,22 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
-		if m.inputValue == "" {
-			m.showInput = false
-			return m, nil
-		}
 		switch m.inputMode {
 		case "create":
+			if m.inputValue == "" {
+				m.showInput = false
+				return m, nil
+			}
 			if _, err := filesystem.CreateNote(m.currentDir, m.inputValue); err == nil {
 				m.showInput = false
 				m.inputValue = ""
 				return m, m.loadItems
 			}
 		case "rename":
+			if m.inputValue == "" {
+				m.showInput = false
+				return m, nil
+			}
 			if m.cursor < len(m.items) && m.items[m.cursor].Note != nil {
 				if err := filesystem.RenameNote(m.items[m.cursor].Note, m.inputValue); err == nil {
 					m.showInput = false
@@ -56,6 +60,12 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, m.loadItems
 				}
 			}
+		case "config_server_url", "config_server_token":
+			key := m.inputMode[len("config_"):]
+			m.applyConfigChange(key, m.inputValue)
+			m.showInput = false
+			m.inputValue = ""
+			return m, nil
 		}
 		m.showInput = false
 		m.inputValue = ""

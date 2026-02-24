@@ -356,7 +356,10 @@
       }
     }
 
-    // Refresh subfolder notes if currently in a subfolder
+    // Refresh folders and subfolder notes so navigation stays in sync
+    try {
+      allFolders = await getFolders();
+    } catch {}
     if (currentDir !== '/') {
       try {
         const path = currentDir.slice(1);

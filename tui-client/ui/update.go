@@ -67,6 +67,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 		return m, nil
 
+	case editorDoneMsg:
+		// Re-read note from disk after editor exits, then refresh items.
+		reloaded, err := filesystem.ReadNote(msg.notePath)
+		if err == nil {
+			m.openNote(reloaded)
+		}
+		return m, m.loadItems
+
 	case syncEventMsg:
 		// A note was changed on the server — reload items.
 		// If viewing a note that was updated, re-read it.
@@ -76,7 +84,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.openNote(reloaded)
 			}
 		}
-		return m, tea.Batch(m.loadItems, m.waitForSyncEvent)
+		cmds := []tea.Cmd{m.loadItems, m.waitForSyncEvent}
+		// Also refresh nav modal items if it's open
+		if m.showNav {
+			cmds = append(cmds, m.loadNavItems)
+		}
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
 		if m.showConfirm {

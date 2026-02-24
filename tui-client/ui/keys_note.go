@@ -80,8 +80,9 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateVisualEnd()
 		} else {
 			if m.fullNote != nil {
+				notePath := m.fullNote.Path
 				return m, tea.ExecProcess(editor.OpenCmd(m.fullNote), func(err error) tea.Msg {
-					return m.loadItems()
+					return editorDoneMsg{notePath: notePath}
 				})
 			}
 		}
