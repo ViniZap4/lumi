@@ -52,9 +52,57 @@ export async function updateNote(id, note) {
 }
 
 export async function deleteNote(id) {
-  const res = await fetch(`${API_URL}/api/notes/${id}`, {
+  const cleanId = id.replace(/\.md$/, '');
+  const encodedId = encodeURIComponent(cleanId);
+  const res = await fetch(`${API_URL}/api/notes/${encodedId}`, {
     method: 'DELETE',
     headers,
   });
   if (!res.ok) throw new Error('Failed to delete note');
+}
+
+export async function moveNote(id, folder) {
+  const cleanId = id.replace(/\.md$/, '');
+  const encodedId = encodeURIComponent(cleanId);
+  const res = await fetch(`${API_URL}/api/notes/${encodedId}/move`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ folder }),
+  });
+  if (!res.ok) throw new Error('Failed to move note');
+  return res.json();
+}
+
+export async function copyNote(id, newId, newTitle) {
+  const cleanId = id.replace(/\.md$/, '');
+  const encodedId = encodeURIComponent(cleanId);
+  const res = await fetch(`${API_URL}/api/notes/${encodedId}/copy`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ new_id: newId, new_title: newTitle }),
+  });
+  if (!res.ok) throw new Error('Failed to copy note');
+  return res.json();
+}
+
+export async function renameNote(id, newId, newTitle) {
+  const cleanId = id.replace(/\.md$/, '');
+  const encodedId = encodeURIComponent(cleanId);
+  const res = await fetch(`${API_URL}/api/notes/${encodedId}/rename`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ new_id: newId, new_title: newTitle }),
+  });
+  if (!res.ok) throw new Error('Failed to rename note');
+  return res.json();
+}
+
+export async function createFolder(name) {
+  const res = await fetch(`${API_URL}/api/folders`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error('Failed to create folder');
+  return res.json();
 }

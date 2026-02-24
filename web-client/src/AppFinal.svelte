@@ -1,6 +1,6 @@
 <script>
   import { onMount, afterUpdate, onDestroy } from 'svelte';
-  import { getNotes, getFolders, getNote, updateNote } from './lib/api.js';
+  import { getNotes, getFolders, getNote, updateNote, createNote, deleteNote, moveNote, copyNote, renameNote, createFolder } from './lib/api.js';
   import { connectWebSocket, disconnect as disconnectWs } from './lib/ws.js';
   import { themes, themeOrder, darkThemeOrder, lightThemeOrder, applyTheme, resolveTheme, loadThemeSettings, saveThemeSettings, watchSystemTheme } from './lib/themes.js';
   import { renderMarkdown } from './lib/markdown.js';
@@ -53,6 +53,191 @@
   // Folder preview
   let folderPreviewCache = {};
   let folderPreviewNotes = [];
+
+  // Command modal state
+  // kind: 'input' | 'confirm' | 'select'
+  let cmdModal = null;
+  let cmdInputValue = '';
+  let cmdSelectCursor = 0;
+
+  function titleToId(t) {
+    return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  async function submitCmd() {
+    if (!cmdModal || cmdModal.kind !== 'input') return;
+    const val = cmdInputValue.trim();
+    if (!val) return;
+    const fn = cmdModal.onSubmit;
+    cmdModal = null;
+    cmdInputValue = '';
+    await fn(val);
+  }
+
+  function cmdNewNote() {
+    cmdInputValue = '';
+    cmdModal = {
+      kind: 'input',
+      title: 'New Note',
+      placeholder: 'Note title...',
+      async onSubmit(value) {
+        const id = titleToId(value);
+        const folder = currentDir === '/' ? '' : currentDir.slice(1);
+        try {
+          const note = await createNote({ id, title: value, content: `# ${value}\n\n`, tags: [], folder });
+          allNotes = [...allNotes, note];
+          buildItems();
+          await openNote({ id: note.id });
+          editMode = true;
+        } catch (err) {
+          error = `Create failed: ${err.message}`;
+        }
+      }
+    };
+  }
+
+  function cmdNewFolder() {
+    cmdInputValue = '';
+    cmdModal = {
+      kind: 'input',
+      title: 'New Folder',
+      placeholder: 'Folder name...',
+      async onSubmit(value) {
+        try {
+          await createFolder(value);
+          allFolders = await getFolders();
+          buildItems();
+        } catch (err) {
+          error = `Create folder failed: ${err.message}`;
+        }
+      }
+    };
+  }
+
+  function cmdRenameItem() {
+    const item = displayItems[cursor];
+    if (!item || item.type !== 'note') return;
+    cmdInputValue = item.name;
+    cmdModal = {
+      kind: 'input',
+      title: 'Rename Note',
+      placeholder: 'New title...',
+      async onSubmit(value) {
+        const newId = titleToId(value);
+        try {
+          const note = await renameNote(item.id, newId, value);
+          await loadAll();
+          if (currentDir !== '/') {
+            const path = currentDir.slice(1);
+            currentDirNotes = await getNotes(path) || [];
+            buildItems();
+          }
+          if (selectedNote && selectedNote.id === item.id) {
+            selectedNote = note;
+            title = note.title || '';
+          }
+        } catch (err) {
+          error = `Rename failed: ${err.message}`;
+        }
+      }
+    };
+  }
+
+  function cmdMoveNote() {
+    const item = displayItems[cursor];
+    if (!item || item.type !== 'note') return;
+    const items = [
+      { label: '/ (root)', value: '' },
+      ...allFolders.map(f => ({ label: f.name + '/', value: f.name }))
+    ];
+    cmdSelectCursor = 0;
+    cmdModal = {
+      kind: 'select',
+      title: `Move "${item.name}"`,
+      items,
+      async onSubmit(folder) {
+        try {
+          await moveNote(item.id, folder);
+          await loadAll();
+          if (currentDir !== '/') {
+            const path = currentDir.slice(1);
+            currentDirNotes = await getNotes(path) || [];
+            buildItems();
+          }
+        } catch (err) {
+          error = `Move failed: ${err.message}`;
+        }
+      }
+    };
+  }
+
+  function cmdCopyNote() {
+    const item = displayItems[cursor];
+    if (!item || item.type !== 'note') return;
+    cmdInputValue = item.name + ' (copy)';
+    cmdModal = {
+      kind: 'input',
+      title: 'Copy Note',
+      placeholder: 'Title for copy...',
+      async onSubmit(value) {
+        const newId = titleToId(value);
+        try {
+          const note = await copyNote(item.id, newId, value);
+          allNotes = [...allNotes, note];
+          buildItems();
+        } catch (err) {
+          error = `Copy failed: ${err.message}`;
+        }
+      }
+    };
+  }
+
+  function cmdDeleteItem() {
+    const item = displayItems[cursor];
+    if (!item || item.type !== 'note') return;
+    cmdModal = {
+      kind: 'confirm',
+      title: 'Delete Note',
+      message: `Delete "${item.name}"?`,
+      async onSubmit() {
+        try {
+          await deleteNote(item.id);
+          allNotes = allNotes.filter(n => n.id !== item.id);
+          buildItems();
+          if (selectedNote && selectedNote.id === item.id) {
+            selectedNote = null;
+            content = '';
+            title = '';
+          }
+        } catch (err) {
+          error = `Delete failed: ${err.message}`;
+        }
+      }
+    };
+  }
+
+  function cmdDeleteCurrentNote() {
+    if (!selectedNote) return;
+    const note = selectedNote;
+    cmdModal = {
+      kind: 'confirm',
+      title: 'Delete Note',
+      message: `Delete "${note.title || note.id}"?`,
+      async onSubmit() {
+        try {
+          await deleteNote(note.id);
+          allNotes = allNotes.filter(n => n.id !== note.id);
+          selectedNote = null;
+          content = '';
+          title = '';
+          viewMode = 'tree';
+          buildItems();
+        } catch (err) {
+          error = `Delete failed: ${err.message}`;
+        }
+      }
+    };
+  }
 
   // Logo lines for per-line coloring
   const logoLines = [
@@ -455,6 +640,47 @@
   }
 
   async function handleKey(e) {
+    // Command modal
+    if (cmdModal) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cmdModal = null;
+        cmdInputValue = '';
+        return;
+      }
+      if (cmdModal.kind === 'confirm') {
+        if (e.key === 'Enter' || e.key === 'y') {
+          e.preventDefault();
+          const fn = cmdModal.onSubmit;
+          cmdModal = null;
+          await fn();
+        }
+        return;
+      }
+      if (cmdModal.kind === 'select') {
+        if (e.key === 'j' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (cmdSelectCursor < cmdModal.items.length - 1) cmdSelectCursor++;
+          return;
+        }
+        if (e.key === 'k' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (cmdSelectCursor > 0) cmdSelectCursor--;
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const item = cmdModal.items[cmdSelectCursor];
+          const fn = cmdModal.onSubmit;
+          cmdModal = null;
+          await fn(item.value);
+          return;
+        }
+        return;
+      }
+      // input kind: Escape handled above, let browser handle typing
+    }
+
     // Search modal
     if (showSearch) {
       if (e.key === 'Escape') {
@@ -515,6 +741,24 @@
       } else if (e.key === 'c') {
         e.preventDefault();
         enterConfig();
+      } else if (e.key === 'n' && !e.shiftKey) {
+        e.preventDefault();
+        cmdNewNote();
+      } else if (e.key === 'N') {
+        e.preventDefault();
+        cmdNewFolder();
+      } else if (e.key === 'r') {
+        e.preventDefault();
+        cmdRenameItem();
+      } else if (e.key === 'm') {
+        e.preventDefault();
+        cmdMoveNote();
+      } else if (e.key === 'y') {
+        e.preventDefault();
+        cmdCopyNote();
+      } else if (e.key === 'd') {
+        e.preventDefault();
+        cmdDeleteItem();
       }
       return;
     }
@@ -546,6 +790,9 @@
       } else if (e.key === 'c' && !editMode) {
         e.preventDefault();
         enterConfig();
+      } else if (e.key === 'd' && !editMode) {
+        e.preventDefault();
+        cmdDeleteCurrentNote();
       }
       return;
     }
@@ -638,8 +885,11 @@
         <span class="key-hint">hjkl</span> move
         <span class="key-hint">enter</span> open
         <span class="key-hint">/</span> search
-        <span class="key-hint">c</span> config
-        <span class="key-hint">esc</span> back
+        <span class="key-hint">n</span> new
+        <span class="key-hint">r</span> rename
+        <span class="key-hint">m</span> move
+        <span class="key-hint">y</span> copy
+        <span class="key-hint">d</span> delete
       </div>
     </div>
 
@@ -749,6 +999,7 @@
       <div class="status-help">
         <span class="key-hint">jk</span> scroll
         <span class="key-hint">e</span> edit
+        <span class="key-hint">d</span> delete
         <span class="key-hint">c</span> config
         <span class="key-hint">h</span> home
         <span class="key-hint">esc</span> back
@@ -880,6 +1131,57 @@
         <span class="key-hint">ctrl+j/k</span> navigate
         <span class="key-hint">enter</span> open
         <span class="key-hint">esc</span> close
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- ─── Command Modal ─────────────────────────────────────────── -->
+{#if cmdModal}
+  <div class="modal-overlay" on:click={() => { cmdModal = null; cmdInputValue = ''; }}>
+    <div class="cmd-modal" on:click|stopPropagation>
+      <div class="modal-title">{cmdModal.title}</div>
+
+      {#if cmdModal.kind === 'input'}
+        <div class="search-input-box">
+          <input
+            type="text"
+            bind:value={cmdInputValue}
+            on:keydown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); submitCmd(); }
+            }}
+            placeholder={cmdModal.placeholder}
+            autofocus
+          />
+        </div>
+      {:else if cmdModal.kind === 'confirm'}
+        <div class="confirm-message">{cmdModal.message}</div>
+      {:else if cmdModal.kind === 'select'}
+        <div class="select-list">
+          {#each cmdModal.items as item, i}
+            <div
+              class="result-item"
+              class:active={i === cmdSelectCursor}
+              on:click={() => { const fn = cmdModal.onSubmit; const v = item.value; cmdModal = null; fn(v); }}
+            >
+              <span class="tree-name">{item.label}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <div class="status-help">
+        {#if cmdModal.kind === 'input'}
+          <span class="key-hint">enter</span> confirm
+          <span class="key-hint">esc</span> cancel
+        {:else if cmdModal.kind === 'confirm'}
+          <span class="key-hint">y/enter</span> confirm
+          <span class="key-hint">n/esc</span> cancel
+        {:else if cmdModal.kind === 'select'}
+          <span class="key-hint">j/k</span> navigate
+          <span class="key-hint">enter</span> select
+          <span class="key-hint">esc</span> cancel
+        {/if}
       </div>
     </div>
   </div>
@@ -1521,6 +1823,33 @@
     background: var(--color-background);
     border: 1px solid var(--color-separator);
     border-radius: 3px;
+    overflow-y: auto;
+  }
+
+  /* ── Command Modal ─────────────────────────────────────────── */
+  .cmd-modal {
+    width: 90%;
+    max-width: 450px;
+    background: var(--color-overlay-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .confirm-message {
+    color: var(--color-text);
+    font-size: 0.95rem;
+    padding: 0.5rem 0;
+  }
+
+  .select-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    max-height: 300px;
     overflow-y: auto;
   }
 </style>
