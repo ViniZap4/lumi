@@ -38,11 +38,17 @@ function processInline(line) {
 
   line = result;
 
-  // Wikilinks: [[text]]
-  line = line.replace(/\[\[([^\]]+)\]\]/g, '<span class="md-link">$1</span>');
+  // Wikilinks: [[target|display]] and [[target]]
+  line = line.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '<a class="md-link md-wikilink" data-note="$1">$2</a>');
+  line = line.replace(/\[\[([^\]]+)\]\]/g, '<a class="md-link md-wikilink" data-note="$1">$1</a>');
 
-  // Standard links: [text](url)
-  line = line.replace(/\[([^\]]+)\]\([^)]+\)/g, '<span class="md-link">$1</span>');
+  // Standard links: [text](url) — external opens in new tab, relative treated as note link
+  line = line.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
+      return `<a class="md-link" href="${url}" target="_blank" rel="noopener">${text}</a>`;
+    }
+    return `<a class="md-link md-wikilink" data-note="${url}">${text}</a>`;
+  });
 
   // Bold-italic: ***text*** or ___text___
   line = line.replace(/\*\*\*(.*?)\*\*\*/g, '<span class="md-bold-italic">$1</span>');

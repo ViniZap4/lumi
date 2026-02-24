@@ -127,7 +127,8 @@ body {
 .md-italic { font-style: italic; }
 .md-bold-italic { font-weight: 700; font-style: italic; }
 .md-strike { text-decoration: line-through; color: var(--color-text-dim); }
-.md-link { color: var(--color-info); text-decoration: underline; }
+.md-link { color: var(--color-info); text-decoration: underline; cursor: pointer; }
+.md-wikilink { text-decoration-style: dotted; }
 
 /* Normal lines */
 .md-line { color: var(--color-text); }

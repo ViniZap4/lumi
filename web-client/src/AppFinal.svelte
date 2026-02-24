@@ -1,8 +1,9 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, afterUpdate, onDestroy } from 'svelte';
   import { getNotes, getFolders, getNote, updateNote } from './lib/api.js';
-  import { themes, themeOrder, applyTheme, loadSavedTheme, cycleTheme } from './lib/themes.js';
+  import { themes, themeOrder, darkThemeOrder, lightThemeOrder, applyTheme, resolveTheme, loadThemeSettings, saveThemeSettings, watchSystemTheme } from './lib/themes.js';
   import { renderMarkdown } from './lib/markdown.js';
+  import { createEditor, destroyEditor, updateTheme as updateEditorTheme, getVimMode, getCursorPosition } from './lib/editor.js';
 
   let viewMode = 'home'; // 'home', 'tree', 'note', 'config'
   let editMode = false;
@@ -16,6 +17,7 @@
   let error = null;
   let saving = false;
   let currentDir = '/';
+  let currentDirNotes = [];
 
   // Search modal
   let showSearch = false;
@@ -25,12 +27,31 @@
   let searchCursor = 0;
 
   // Theme state
+  let themeMode = 'dark';
+  let darkThemeName = 'tokyo-night';
+  let lightThemeName = 'tokyo-day';
   let currentThemeName = 'tokyo-night';
+  let cleanupSystemWatch = null;
   $: currentTheme = themes[currentThemeName];
+
+  // Editor state
+  let editorView = null;
+  let editorContainer = null;
+  let vimMode = null;
+  let cursorLine = 1;
+  let cursorCol = 1;
+  let vimPollInterval = null;
+  let vimEnabled = true;
+  let jjEscape = false;
+  let relativeNumbers = false;
 
   // Config state
   let configCursor = 1; // skip first header
   let previousView = 'home';
+
+  // Folder preview
+  let folderPreviewCache = {};
+  let folderPreviewNotes = [];
 
   // Logo lines for per-line coloring
   const logoLines = [
@@ -67,7 +88,13 @@
   function buildConfigItems() {
     return [
       { label: 'Theme', kind: 'header' },
-      { label: 'Theme', kind: 'cycle', key: 'theme', value: currentThemeName, options: themeOrder },
+      { label: 'Mode', kind: 'cycle', key: 'theme_mode', value: themeMode, options: ['dark', 'light', 'auto'] },
+      { label: 'Dark theme', kind: 'cycle', key: 'dark_theme', value: darkThemeName, options: darkThemeOrder },
+      { label: 'Light theme', kind: 'cycle', key: 'light_theme', value: lightThemeName, options: lightThemeOrder },
+      { label: 'Editor', kind: 'header' },
+      { label: 'Vim mode', kind: 'cycle', key: 'vim_mode', value: vimEnabled ? 'on' : 'off', options: ['on', 'off'] },
+      { label: 'jj to esc', kind: 'cycle', key: 'jj_escape', value: jjEscape ? 'on' : 'off', options: ['on', 'off'] },
+      { label: 'Relative number', kind: 'cycle', key: 'relative_numbers', value: relativeNumbers ? 'on' : 'off', options: ['on', 'off'] },
       { label: 'Display', kind: 'header' },
       { label: 'Search', kind: 'cycle', key: 'search_type', value: searchType, options: ['filename', 'content'] },
     ];
@@ -75,12 +102,97 @@
 
   $: configItems = buildConfigItems();
 
-  onMount(async () => {
-    currentThemeName = loadSavedTheme();
+  function applyResolvedTheme() {
+    currentThemeName = resolveTheme(themeMode, darkThemeName, lightThemeName);
     applyTheme(currentThemeName);
+    saveThemeSettings(themeMode, darkThemeName, lightThemeName);
+    if (editorView) updateEditorTheme(editorView);
+  }
+
+  function setupSystemWatch() {
+    if (cleanupSystemWatch) cleanupSystemWatch();
+    if (themeMode === 'auto') {
+      cleanupSystemWatch = watchSystemTheme(() => applyResolvedTheme());
+    } else {
+      cleanupSystemWatch = null;
+    }
+  }
+
+  function loadEditorSettings() {
+    try {
+      const s = JSON.parse(localStorage.getItem('lumi-editor-settings'));
+      if (s) {
+        if (typeof s.vimEnabled === 'boolean') vimEnabled = s.vimEnabled;
+        if (typeof s.jjEscape === 'boolean') jjEscape = s.jjEscape;
+        if (typeof s.relativeNumbers === 'boolean') relativeNumbers = s.relativeNumbers;
+      }
+    } catch {}
+  }
+
+  function saveEditorSettings() {
+    localStorage.setItem('lumi-editor-settings', JSON.stringify({ vimEnabled, jjEscape, relativeNumbers }));
+  }
+
+  onMount(async () => {
+    const settings = loadThemeSettings();
+    themeMode = settings.mode;
+    darkThemeName = settings.darkName;
+    lightThemeName = settings.lightName;
+    applyResolvedTheme();
+    setupSystemWatch();
+    loadEditorSettings();
     await loadAll();
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
+  });
+
+  onDestroy(() => {
+    if (cleanupSystemWatch) cleanupSystemWatch();
+    if (editorView) destroyEditor(editorView);
+    if (vimPollInterval) clearInterval(vimPollInterval);
+  });
+
+  function cleanupEditor() {
+    if (editorView) {
+      destroyEditor(editorView);
+      editorView = null;
+    }
+    if (vimPollInterval) {
+      clearInterval(vimPollInterval);
+      vimPollInterval = null;
+    }
+    vimMode = null;
+  }
+
+  afterUpdate(() => {
+    // Clean up stale editor (container removed from DOM, e.g. went to config)
+    if (editorView && (!editorContainer || !document.contains(editorContainer))) {
+      cleanupEditor();
+    }
+    // Create editor when entering edit mode
+    if (editMode && editorContainer && !editorView) {
+      editorView = createEditor(editorContainer, content, {
+        onChange: (newContent) => { content = newContent; },
+        onSave: () => save(),
+        onQuit: () => { editMode = false; },
+        vimEnabled,
+        jjEscape,
+        relativeLineNumbers: relativeNumbers,
+      });
+      editorView.focus();
+      vimPollInterval = setInterval(() => {
+        if (editorView) {
+          vimMode = getVimMode(editorView);
+          const pos = getCursorPosition(editorView);
+          cursorLine = pos.line;
+          cursorCol = pos.col;
+        }
+      }, 100);
+    }
+    // Destroy editor when leaving edit mode
+    if (!editMode && editorView) {
+      cleanupEditor();
+    }
   });
 
   async function loadAll() {
@@ -96,12 +208,18 @@
 
   function buildItems() {
     displayItems = [];
-    allFolders.forEach(f => {
-      displayItems.push({ type: 'folder', name: f.name, path: f.path, data: f });
-    });
-    allNotes.forEach(n => {
-      displayItems.push({ type: 'note', name: n.title || n.id, id: n.id, data: n });
-    });
+    if (currentDir === '/') {
+      allFolders.forEach(f => {
+        displayItems.push({ type: 'folder', name: f.name, path: f.path, data: f });
+      });
+      allNotes.forEach(n => {
+        displayItems.push({ type: 'note', name: n.title || n.id, id: n.id, data: n });
+      });
+    } else {
+      currentDirNotes.forEach(n => {
+        displayItems.push({ type: 'note', name: n.title || n.id, id: n.id, data: n });
+      });
+    }
     cursor = Math.min(cursor, Math.max(0, displayItems.length - 1));
   }
 
@@ -139,6 +257,79 @@
       editMode = false;
     } catch (err) {
       error = `Failed to open: ${err.message}`;
+    }
+  }
+
+  // Folder navigation
+  async function enterFolder(folder) {
+    const path = folder.path || folder.name;
+    try {
+      currentDirNotes = await getNotes(path) || [];
+      currentDir = '/' + path;
+      buildItems();
+      cursor = 0;
+    } catch (err) {
+      error = `Failed to open folder: ${err.message}`;
+    }
+  }
+
+  function goBackDir() {
+    currentDir = '/';
+    currentDirNotes = [];
+    buildItems();
+    cursor = 0;
+  }
+
+  // Folder preview loading
+  async function loadFolderPreview(folderPath) {
+    if (folderPreviewCache[folderPath]) {
+      folderPreviewNotes = folderPreviewCache[folderPath];
+      return;
+    }
+    try {
+      const notes = await getNotes(folderPath) || [];
+      folderPreviewCache[folderPath] = notes;
+      const item = displayItems[cursor];
+      if ((item?.path || item?.name) === folderPath) {
+        folderPreviewNotes = notes;
+      }
+    } catch {
+      folderPreviewNotes = [];
+    }
+  }
+
+  $: {
+    const item = displayItems[cursor];
+    if (item?.type === 'folder') {
+      loadFolderPreview(item.path || item.name);
+    } else {
+      folderPreviewNotes = [];
+    }
+  }
+
+  // Note link click handler
+  async function handleNoteClick(e) {
+    const link = e.target.closest('.md-wikilink');
+    if (!link) return;
+    e.preventDefault();
+    const ref = link.dataset.note;
+    if (!ref) return;
+
+    const lower = ref.toLowerCase();
+    const localMatch = allNotes.find(n =>
+      n.id === ref || n.id === lower ||
+      n.id === lower.replace(/\s+/g, '-') ||
+      (n.title && n.title.toLowerCase() === lower)
+    );
+
+    if (localMatch) {
+      await openNote({ id: localMatch.id });
+    } else {
+      try {
+        await openNote({ id: ref });
+      } catch {
+        error = `Note not found: ${ref}`;
+      }
     }
   }
 
@@ -186,9 +377,25 @@
     const newValue = opts[idx];
 
     // Apply
-    if (item.key === 'theme') {
-      currentThemeName = newValue;
-      applyTheme(newValue);
+    if (item.key === 'theme_mode') {
+      themeMode = newValue;
+      applyResolvedTheme();
+      setupSystemWatch();
+    } else if (item.key === 'dark_theme') {
+      darkThemeName = newValue;
+      applyResolvedTheme();
+    } else if (item.key === 'light_theme') {
+      lightThemeName = newValue;
+      applyResolvedTheme();
+    } else if (item.key === 'vim_mode') {
+      vimEnabled = newValue === 'on';
+      saveEditorSettings();
+    } else if (item.key === 'jj_escape') {
+      jjEscape = newValue === 'on';
+      saveEditorSettings();
+    } else if (item.key === 'relative_numbers') {
+      relativeNumbers = newValue === 'on';
+      saveEditorSettings();
     } else if (item.key === 'search_type') {
       searchType = newValue;
     }
@@ -233,7 +440,7 @@
       }
     }
 
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.closest?.('.cm-editor')) return;
 
     // Home view
     if (viewMode === 'home' && !showSearch) {
@@ -254,10 +461,16 @@
         if (cursor > 0) cursor--;
       } else if (e.key === 'Enter' || e.key === 'l') {
         e.preventDefault();
-        if (displayItems[cursor]?.type === 'note') openNote(displayItems[cursor]);
+        const item = displayItems[cursor];
+        if (item?.type === 'note') openNote(item);
+        else if (item?.type === 'folder') enterFolder(item);
       } else if (e.key === 'Escape' || e.key === 'h') {
         e.preventDefault();
-        viewMode = 'home';
+        if (currentDir !== '/') {
+          goBackDir();
+        } else {
+          viewMode = 'home';
+        }
       } else if (e.key === 'c') {
         e.preventDefault();
         enterConfig();
@@ -265,11 +478,11 @@
       return;
     }
 
-    // Note view
+    // Note view (only non-edit keys — edit mode Esc is handled by CodeMirror)
     if (viewMode === 'note') {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !editMode) {
         e.preventDefault();
-        if (editMode) { editMode = false; } else { viewMode = 'tree'; selectedNote = null; }
+        viewMode = 'tree'; selectedNote = null;
       } else if (e.key === 'h' && !editMode) {
         e.preventDefault();
         viewMode = 'home';
@@ -338,7 +551,26 @@
     <div class="tree-col parent-col">
       <div class="col-header">Parent</div>
       <div class="col-body">
-        <div class="parent-item">~</div>
+        {#if currentDir === '/'}
+          <div class="parent-item">~</div>
+        {:else}
+          {#each allFolders as f}
+            <div
+              class="tree-item folder-item"
+              class:parent-active={'/' + (f.path || f.name) === currentDir}
+              on:click={() => enterFolder(f)}
+            >
+              <span class="tree-icon">/</span>
+              <span class="tree-name">{f.name}</span>
+            </div>
+          {/each}
+          {#each allNotes as n}
+            <div class="tree-item" on:click={() => openNote({ id: n.id })}>
+              <span class="tree-icon">&nbsp;</span>
+              <span class="tree-name">{n.title || n.id}</span>
+            </div>
+          {/each}
+        {/if}
       </div>
     </div>
 
@@ -350,12 +582,16 @@
           <div
             class="tree-item"
             class:active={i === cursor}
-            on:click={() => { cursor = i; if (item.type === 'note') openNote(item); }}
+            class:folder-item={item.type === 'folder'}
+            on:click={() => { cursor = i; if (item.type === 'note') openNote(item); else if (item.type === 'folder') enterFolder(item); }}
           >
             <span class="tree-icon">{item.type === 'folder' ? '/' : ' '}</span>
             <span class="tree-name">{item.name}</span>
           </div>
         {/each}
+        {#if displayItems.length === 0}
+          <div class="empty-msg">Empty</div>
+        {/if}
       </div>
       <div class="col-help">
         <span class="key-hint">hjkl</span> move
@@ -373,8 +609,23 @@
         {#if previewNote}
           <div class="preview-title">{previewNote.title || previewNote.id}</div>
           <div class="sep"></div>
-          <div class="preview-md">
+          <div class="preview-md" on:click={handleNoteClick}>
             {@html renderMarkdown(previewNote.content?.split('\n').slice(0, 20).join('\n') || '')}
+          </div>
+        {:else if currentItem?.type === 'folder'}
+          <div class="preview-title">{currentItem.name}/</div>
+          <div class="sep"></div>
+          <div class="folder-preview-list">
+            {#if folderPreviewNotes.length > 0}
+              {#each folderPreviewNotes.slice(0, 12) as note}
+                <div class="folder-preview-item">{note.title || note.id}</div>
+              {/each}
+              {#if folderPreviewNotes.length > 12}
+                <div class="folder-preview-more">+{folderPreviewNotes.length - 12} more</div>
+              {/if}
+            {:else}
+              <div class="empty-msg">Empty folder</div>
+            {/if}
           </div>
         {:else}
           <div class="empty-msg">Select a note to preview</div>
@@ -402,15 +653,22 @@
             <button on:click={() => editMode = false}>View (esc)</button>
           </div>
         </div>
-        <div class="editor-body">
-          <textarea
-            bind:value={content}
-            placeholder="Write your note..."
-          ></textarea>
-        </div>
-        <div class="status-help">
-          <span class="key-hint">ctrl+s</span> save
-          <span class="key-hint">esc</span> view
+        <div class="editor-body" bind:this={editorContainer}></div>
+        <div class="status-bar-editor">
+          {#if vimMode}
+            <span class="vim-mode" class:insert={vimMode === 'INSERT'} class:visual={vimMode === 'VISUAL' || vimMode === 'V-LINE' || vimMode === 'V-BLOCK'}>{vimMode}</span>
+          {/if}
+          <span class="cursor-pos">Ln {cursorLine} Col {cursorCol}</span>
+          <span class="editor-hints">
+            {#if vimMode}
+              <span class="key-hint">:w</span> save
+              <span class="key-hint">:q</span> quit
+              <span class="key-hint">esc</span> normal
+            {:else}
+              <span class="key-hint">ctrl+s</span> save
+              <span class="key-hint">esc</span> close
+            {/if}
+          </span>
         </div>
       </div>
 
@@ -418,7 +676,7 @@
         <div class="note-bar">
           <span class="bar-label">Live Preview</span>
         </div>
-        <div class="preview-md-body">
+        <div class="preview-md-body" on:click={handleNoteClick}>
           {@html renderMarkdown(content || '')}
         </div>
       </div>
@@ -438,7 +696,7 @@
       <div class="sep"></div>
 
       <!-- Content -->
-      <div class="note-view-content">
+      <div class="note-view-content" on:click={handleNoteClick}>
         {@html renderMarkdown(content || '')}
       </div>
 
@@ -745,6 +1003,23 @@
     color: var(--color-accent);
   }
 
+  .tree-item.folder-item {
+    color: var(--color-secondary);
+  }
+
+  .tree-item.folder-item .tree-icon {
+    color: inherit;
+  }
+
+  .tree-item.parent-active {
+    background: var(--color-selected-bg);
+    color: var(--color-accent);
+  }
+
+  .tree-item.parent-active .tree-icon {
+    color: inherit;
+  }
+
   .tree-icon {
     color: var(--color-muted);
     width: 1ch;
@@ -760,6 +1035,23 @@
 
   .preview-body {
     padding: 1rem 1.25rem;
+  }
+
+  .folder-preview-list {
+    padding: 0.5rem 0;
+  }
+
+  .folder-preview-item {
+    padding: 0.3rem 0;
+    color: var(--color-text);
+    font-size: 0.9rem;
+  }
+
+  .folder-preview-more {
+    padding: 0.3rem 0;
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    font-style: italic;
   }
 
   .preview-title {
@@ -908,23 +1200,53 @@
 
   .editor-body {
     flex: 1;
-    padding: 1.25rem;
+    overflow: hidden;
   }
 
-  .editor-body textarea {
-    width: 100%;
+  .editor-body :global(.cm-editor) {
     height: 100%;
-    background: transparent;
-    border: none;
-    color: var(--color-text);
-    font-family: inherit;
-    font-size: 0.95rem;
-    line-height: 1.7;
-    resize: none;
   }
 
-  .editor-body textarea:focus {
+  .editor-body :global(.cm-scroller) {
+    overflow: auto;
+  }
+
+  .editor-body :global(.cm-focused) {
     outline: none;
+  }
+
+  .status-bar-editor {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1.25rem;
+    background: var(--color-selected-bg);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--color-separator);
+  }
+
+  .vim-mode {
+    font-weight: 700;
+    color: var(--color-primary);
+  }
+
+  .vim-mode.insert {
+    color: var(--color-warning);
+  }
+
+  .vim-mode.visual {
+    color: var(--color-accent);
+  }
+
+  .cursor-pos {
+    color: var(--color-muted);
+  }
+
+  .editor-hints {
+    margin-left: auto;
+    color: var(--color-muted);
+    display: flex;
+    gap: 0.75rem;
   }
 
   .preview-md-body {

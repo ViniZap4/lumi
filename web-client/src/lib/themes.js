@@ -246,10 +246,15 @@ export const themes = {
   },
 };
 
+/** Filtered theme lists by isDark */
+export const darkThemeOrder = themeOrder.filter(n => themes[n].isDark);
+export const lightThemeOrder = themeOrder.filter(n => !themes[n].isDark);
+
 const STORAGE_KEY = 'lumi-theme';
+const SETTINGS_KEY = 'lumi-theme-settings';
 
 /**
- * Apply a theme by name — sets CSS custom properties on :root and saves to localStorage.
+ * Apply a theme by name — sets CSS custom properties on :root.
  */
 export function applyTheme(name) {
   const t = themes[name];
@@ -274,30 +279,56 @@ export function applyTheme(name) {
   for (let i = 0; i < 6; i++) {
     root.style.setProperty(`--color-logo-${i}`, t.logoColors[i]);
   }
-
-  localStorage.setItem(STORAGE_KEY, name);
 }
 
 /**
- * Load the saved theme name from localStorage, defaulting to 'tokyo-night'.
+ * Resolve which theme name to use based on mode.
  */
-export function loadSavedTheme() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved && themes[saved]) return saved;
-  return 'tokyo-night';
+export function resolveTheme(mode, darkName, lightName) {
+  if (mode === 'dark') return darkName;
+  if (mode === 'light') return lightName;
+  // auto — use OS preference
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return prefersDark ? darkName : lightName;
 }
 
 /**
- * Cycle to the next or previous theme.
- * @param {string} currentName
- * @param {number} direction — 1 for next, -1 for previous
- * @returns {string} the new theme name
+ * Load theme settings from localStorage, migrating from old single-key format.
  */
-export function cycleTheme(currentName, direction) {
-  let idx = themeOrder.indexOf(currentName);
-  if (idx === -1) idx = 0;
-  idx += direction;
-  if (idx < 0) idx = themeOrder.length - 1;
-  if (idx >= themeOrder.length) idx = 0;
-  return themeOrder[idx];
+export function loadThemeSettings() {
+  const saved = localStorage.getItem(SETTINGS_KEY);
+  if (saved) {
+    try {
+      const s = JSON.parse(saved);
+      if (s.mode && s.darkName && s.lightName) return s;
+    } catch {}
+  }
+  // Migrate from old single-key format
+  const oldTheme = localStorage.getItem(STORAGE_KEY);
+  if (oldTheme && themes[oldTheme]) {
+    const isDark = themes[oldTheme].isDark;
+    return {
+      mode: isDark ? 'dark' : 'light',
+      darkName: isDark ? oldTheme : darkThemeOrder[0],
+      lightName: isDark ? lightThemeOrder[0] : oldTheme,
+    };
+  }
+  return { mode: 'dark', darkName: 'tokyo-night', lightName: 'tokyo-day' };
+}
+
+/**
+ * Persist theme settings to localStorage.
+ */
+export function saveThemeSettings(mode, darkName, lightName) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ mode, darkName, lightName }));
+}
+
+/**
+ * Watch for OS color-scheme changes. Returns a cleanup function.
+ */
+export function watchSystemTheme(callback) {
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const handler = (e) => callback(e.matches);
+  mq.addEventListener('change', handler);
+  return () => mq.removeEventListener('change', handler);
 }
