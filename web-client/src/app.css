@@ -1,11 +1,31 @@
+/* ── Base reset & theme defaults (tokyo-night fallback) ───────────── */
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --color-primary: #7aa2f7;
+  --color-secondary: #bb9af7;
+  --color-accent: #7dcfff;
+  --color-muted: #565f89;
+  --color-background: #1a1b26;
+  --color-selected-bg: #292e42;
+  --color-overlay-bg: #16161e;
+  --color-text: #c0caf5;
+  --color-text-dim: #565f89;
+  --color-border: #3b4261;
+  --color-separator: #292e42;
+  --color-error: #f7768e;
+  --color-warning: #e0af68;
+  --color-info: #7dcfff;
+  --color-logo-0: #7aa2f7;
+  --color-logo-1: #7dcfff;
+  --color-logo-2: #bb9af7;
+  --color-logo-3: #7aa2f7;
+  --color-logo-4: #7dcfff;
+  --color-logo-5: #bb9af7;
+
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color: var(--color-text);
+  background-color: var(--color-background);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -13,30 +33,22 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
-a:hover {
-  color: #535bf2;
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--color-background);
+  color: var(--color-text);
 }
 
 body {
-  margin: 0;
   display: flex;
-  place-items: center;
   min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-.card {
-  padding: 2em;
 }
 
 #app {
@@ -44,34 +56,85 @@ h1 {
   height: 100%;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
+/* ── Global markdown styles (for {@html} unscoped output) ────────── */
+
+/* Headings — match TUI: h1=primary, h2=secondary, h3+=accent */
+.md-h1 { color: var(--color-primary); font-weight: 700; font-size: 1.25em; }
+.md-h2 { color: var(--color-secondary); font-weight: 700; font-size: 1.15em; }
+.md-h3 { color: var(--color-accent); font-weight: 700; font-size: 1.05em; }
+.md-h4, .md-h5, .md-h6 { color: var(--color-accent); font-weight: 700; }
+
+/* Code block */
+.md-code-block {
+  background: var(--color-overlay-bg);
+  border: 1px solid var(--color-separator);
+  border-radius: 4px;
+  padding: 0.75em 1em;
+  margin: 0.25em 0;
+  position: relative;
+  overflow-x: auto;
+}
+.md-code-block pre {
+  margin: 0;
+  color: var(--color-text-dim);
   font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
+  font-size: 0.9em;
+  line-height: 1.6;
+  white-space: pre;
 }
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+.md-code-lang {
+  position: absolute;
+  top: 0.35em;
+  right: 0.75em;
+  font-size: 0.7em;
+  color: var(--color-muted);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+/* Inline code — accent like TUI's clsCode */
+.md-code {
+  color: var(--color-accent);
+  background: var(--color-overlay-bg);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.9em;
 }
+
+/* Blockquote — muted + italic like TUI */
+.md-blockquote {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+/* List items */
+.md-list-item {
+  color: var(--color-text);
+}
+.md-list-marker {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* Horizontal rule */
+.md-hr {
+  border: none;
+  border-top: 1px solid var(--color-separator);
+  margin: 0.5em 0;
+  height: 0;
+}
+
+/* Inline formatting */
+.md-bold { font-weight: 700; }
+.md-italic { font-style: italic; }
+.md-bold-italic { font-weight: 700; font-style: italic; }
+.md-strike { text-decoration: line-through; color: var(--color-text-dim); }
+.md-link { color: var(--color-info); text-decoration: underline; }
+
+/* Normal lines */
+.md-line { color: var(--color-text); }
+.md-blank { height: 0.5em; }
+
+/* ── Scrollbar ───────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }

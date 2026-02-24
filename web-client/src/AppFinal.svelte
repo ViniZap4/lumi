@@ -1,9 +1,11 @@
 <script>
   import { onMount } from 'svelte';
   import { getNotes, getFolders, getNote, updateNote } from './lib/api.js';
+  import { themes, themeOrder, applyTheme, loadSavedTheme, cycleTheme } from './lib/themes.js';
+  import { renderMarkdown } from './lib/markdown.js';
 
-  let viewMode = 'home'; // 'home', 'tree', 'note'
-  let editMode = false; // false = view only, true = edit
+  let viewMode = 'home'; // 'home', 'tree', 'note', 'config'
+  let editMode = false;
   let allNotes = [];
   let allFolders = [];
   let displayItems = [];
@@ -14,15 +16,68 @@
   let error = null;
   let saving = false;
   let currentDir = '/';
-  
+
   // Search modal
   let showSearch = false;
   let searchQuery = '';
-  let searchType = 'filename'; // 'filename' or 'content'
+  let searchType = 'filename';
   let searchResults = [];
   let searchCursor = 0;
 
+  // Theme state
+  let currentThemeName = 'tokyo-night';
+  $: currentTheme = themes[currentThemeName];
+
+  // Config state
+  let configCursor = 1; // skip first header
+  let previousView = 'home';
+
+  // Logo lines for per-line coloring
+  const logoLines = [
+    '  ██╗     ██╗   ██╗███╗   ███╗██╗',
+    '  ██║     ██║   ██║████╗ ████║██║',
+    '  ██║     ██║   ██║██╔████╔██║██║',
+    '  ██║     ██║   ██║██║╚██╔╝██║██║',
+    '  ███████╗╚██████╔╝██║ ╚═╝ ██║██║',
+    '  ╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝',
+  ];
+
+  // Sample markdown for config preview (matches TUI's previewSamples)
+  const sampleMarkdown = [
+    '# Heading 1',
+    '## Heading 2',
+    '### Heading 3',
+    '',
+    'Normal text with **bold** and *italic*.',
+    'A `code span` and a [link](url).',
+    '',
+    '- List item one',
+    '- Another with [[wikilink]]',
+    '',
+    '> Blockquote text here',
+    '',
+    '```',
+    'code block line',
+    '```',
+    '',
+    '---',
+  ].join('\n');
+
+  // Config items definition
+  function buildConfigItems() {
+    return [
+      { label: 'Theme', kind: 'header' },
+      { label: 'Theme', kind: 'cycle', key: 'theme', value: currentThemeName, options: themeOrder },
+      { label: 'Display', kind: 'header' },
+      { label: 'Search', kind: 'cycle', key: 'search_type', value: searchType, options: ['filename', 'content'] },
+    ];
+  }
+
+  $: configItems = buildConfigItems();
+
   onMount(async () => {
+    currentThemeName = loadSavedTheme();
+    applyTheme(currentThemeName);
     await loadAll();
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
@@ -53,14 +108,10 @@
   $: currentItem = displayItems[cursor];
   $: previewNote = currentItem?.type === 'note' ? currentItem.data : null;
 
-
   function performSearch() {
     if (searchQuery === '') {
       searchResults = allNotes.map(n => ({
-        type: 'note',
-        name: n.title || n.id,
-        id: n.id,
-        data: n
+        type: 'note', name: n.title || n.id, id: n.id, data: n
       }));
     } else {
       const query = searchQuery.toLowerCase();
@@ -71,10 +122,7 @@
           return (n.content || '').toLowerCase().includes(query);
         }
       }).map(n => ({
-        type: 'note',
-        name: n.title || n.id,
-        id: n.id,
-        data: n
+        type: 'note', name: n.title || n.id, id: n.id, data: n
       }));
     }
     searchCursor = 0;
@@ -88,7 +136,7 @@
       title = note.title || '';
       content = note.content || '';
       viewMode = 'note';
-      editMode = false; // Start in view mode
+      editMode = false;
     } catch (err) {
       error = `Failed to open: ${err.message}`;
     }
@@ -107,8 +155,59 @@
     }
   }
 
+  // Config navigation
+  function enterConfig() {
+    previousView = viewMode;
+    configCursor = 1; // skip first header
+    viewMode = 'config';
+  }
+
+  function configMoveDown() {
+    for (let i = configCursor + 1; i < configItems.length; i++) {
+      if (configItems[i].kind !== 'header') { configCursor = i; return; }
+    }
+  }
+
+  function configMoveUp() {
+    for (let i = configCursor - 1; i >= 0; i--) {
+      if (configItems[i].kind !== 'header') { configCursor = i; return; }
+    }
+  }
+
+  function configCycleOption(direction) {
+    const item = configItems[configCursor];
+    if (!item || item.kind !== 'cycle') return;
+    const opts = item.options;
+    let idx = opts.indexOf(item.value);
+    if (idx === -1) idx = 0;
+    idx += direction;
+    if (idx < 0) idx = opts.length - 1;
+    if (idx >= opts.length) idx = 0;
+    const newValue = opts[idx];
+
+    // Apply
+    if (item.key === 'theme') {
+      currentThemeName = newValue;
+      applyTheme(newValue);
+    } else if (item.key === 'search_type') {
+      searchType = newValue;
+    }
+    // Trigger rebuild
+    configItems = buildConfigItems();
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return '';
+    }
+  }
+
   async function handleKey(e) {
-    // Allow keys in search modal even when input focused
+    // Search modal
     if (showSearch) {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -133,32 +232,21 @@
         return;
       }
     }
-    
+
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    
+
     // Home view
     if (viewMode === 'home' && !showSearch) {
-      if (e.key === '/') {
-        e.preventDefault();
-        showSearch = true;
-        performSearch();
-      } else if (e.key === 't' || e.key === 'Enter') {
-        e.preventDefault();
-        viewMode = 'tree';
-      } else if (e.key === 'q') {
-        e.preventDefault();
-        // Could close window
-      }
+      if (e.key === '/') { e.preventDefault(); showSearch = true; performSearch(); }
+      else if (e.key === 't' || e.key === 'Enter') { e.preventDefault(); viewMode = 'tree'; }
+      else if (e.key === 'c') { e.preventDefault(); enterConfig(); }
       return;
     }
 
     // Tree view
     if (viewMode === 'tree') {
-      if (e.key === '/') {
-        e.preventDefault();
-        showSearch = true;
-        performSearch();
-      } else if (e.key === 'j' || e.key === 'ArrowDown') {
+      if (e.key === '/') { e.preventDefault(); showSearch = true; performSearch(); }
+      else if (e.key === 'j' || e.key === 'ArrowDown') {
         e.preventDefault();
         if (cursor < displayItems.length - 1) cursor++;
       } else if (e.key === 'k' || e.key === 'ArrowUp') {
@@ -166,12 +254,13 @@
         if (cursor > 0) cursor--;
       } else if (e.key === 'Enter' || e.key === 'l') {
         e.preventDefault();
-        if (displayItems[cursor] && displayItems[cursor].type === 'note') {
-          openNote(displayItems[cursor]);
-        }
+        if (displayItems[cursor]?.type === 'note') openNote(displayItems[cursor]);
       } else if (e.key === 'Escape' || e.key === 'h') {
         e.preventDefault();
         viewMode = 'home';
+      } else if (e.key === 'c') {
+        e.preventDefault();
+        enterConfig();
       }
       return;
     }
@@ -180,13 +269,8 @@
     if (viewMode === 'note') {
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (editMode) {
-          editMode = false; // Exit edit mode first
-        } else {
-          viewMode = 'tree';
-          selectedNote = null;
-        }
-      } else if (e.key === 'h') {
+        if (editMode) { editMode = false; } else { viewMode = 'tree'; selectedNote = null; }
+      } else if (e.key === 'h' && !editMode) {
         e.preventDefault();
         viewMode = 'home';
         selectedNote = null;
@@ -195,117 +279,121 @@
         editMode = true;
       } else if (e.key === 'j' && !editMode) {
         e.preventDefault();
-        const content = document.querySelector('.note-view-content');
-        if (content) content.scrollBy(0, 40);
+        const el = document.querySelector('.note-view-content');
+        if (el) el.scrollBy(0, 40);
       } else if (e.key === 'k' && !editMode) {
         e.preventDefault();
-        const content = document.querySelector('.note-view-content');
-        if (content) content.scrollBy(0, -40);
-      } else if (e.key === '/') {
+        const el = document.querySelector('.note-view-content');
+        if (el) el.scrollBy(0, -40);
+      } else if (e.key === '/' && !editMode) {
         e.preventDefault();
         showSearch = true;
         performSearch();
+      } else if (e.key === 'c' && !editMode) {
+        e.preventDefault();
+        enterConfig();
       }
+      return;
     }
-  }
 
-  function renderMarkdown(md) {
-    if (!md) return '';
-    return md
-      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\[\[([^\]]+)\]\]/g, '<a href="#" class="wiki-link">$1</a>')
-      .replace(/\n/g, '<br>');
+    // Config view
+    if (viewMode === 'config') {
+      if (e.key === 'Escape') { e.preventDefault(); viewMode = previousView; }
+      else if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); configMoveDown(); }
+      else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); configMoveUp(); }
+      else if (e.key === 'l' || e.key === 'ArrowRight') { e.preventDefault(); configCycleOption(1); }
+      else if (e.key === 'h' || e.key === 'ArrowLeft') { e.preventDefault(); configCycleOption(-1); }
+      return;
+    }
   }
 
   $: if (showSearch) performSearch();
 </script>
 
 {#if error}
-  <div class="error">{error}</div>
+  <div class="error-toast">{error}</div>
 {/if}
 
-<!-- Home View -->
+<!-- ─── Home View ─────────────────────────────────────────────── -->
 {#if viewMode === 'home'}
   <div class="home-view">
-    <div class="ascii-art">
-  ██╗     ██╗   ██╗███╗   ███╗██╗
-  ██║     ██║   ██║████╗ ████║██║
-  ██║     ██║   ██║██╔████╔██║██║
-  ██║     ██║   ██║██║╚██╔╝██║██║
-  ███████╗╚██████╔╝██║ ╚═╝ ██║██║
-  ╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝
+    <div class="logo">
+      {#each logoLines as line, i}
+        <div class="logo-line" style="color: var(--color-logo-{i})">{line}</div>
+      {/each}
     </div>
     <div class="subtitle">Local-first Markdown notes</div>
     <div class="home-keys">
-      <div>/  Search notes</div>
-      <div>t  Browse tree</div>
+      <div><span class="key-hint">/</span> Search notes</div>
+      <div><span class="key-hint">t</span> Browse tree</div>
+      <div><span class="key-hint">c</span> Settings</div>
     </div>
   </div>
 {/if}
 
-<!-- Tree View -->
+<!-- ─── Tree View ─────────────────────────────────────────────── -->
 {#if viewMode === 'tree'}
-  <div class="tree-view-3col">
+  <div class="tree-view">
     <!-- Parent Column -->
-    <div class="parent-col">
+    <div class="tree-col parent-col">
       <div class="col-header">Parent</div>
-      <div class="col-content">
-        <div class="parent-item">📁 ~</div>
+      <div class="col-body">
+        <div class="parent-item">~</div>
       </div>
     </div>
 
-    <!-- Center Column (Current) -->
-    <div class="center-col">
-      <div class="col-header">📂 {currentDir}</div>
-      <div class="col-content">
+    <!-- Center Column -->
+    <div class="tree-col center-col">
+      <div class="col-header col-header-primary">{currentDir}</div>
+      <div class="col-body">
         {#each displayItems as item, i}
-          <div 
+          <div
             class="tree-item"
             class:active={i === cursor}
             on:click={() => { cursor = i; if (item.type === 'note') openNote(item); }}
           >
-            <span class="icon">{item.type === 'folder' ? '📁' : '📄'}</span>
-            <span class="name">{item.name}</span>
+            <span class="tree-icon">{item.type === 'folder' ? '/' : ' '}</span>
+            <span class="tree-name">{item.name}</span>
           </div>
         {/each}
       </div>
-      <div class="col-help">hjkl=move | enter=open | /=search | esc=back</div>
+      <div class="col-help">
+        <span class="key-hint">hjkl</span> move
+        <span class="key-hint">enter</span> open
+        <span class="key-hint">/</span> search
+        <span class="key-hint">c</span> config
+        <span class="key-hint">esc</span> back
+      </div>
     </div>
 
     <!-- Preview Column -->
-    <div class="preview-col">
+    <div class="tree-col preview-col">
       <div class="col-header">Preview</div>
-      <div class="col-content">
+      <div class="col-body preview-body">
         {#if previewNote}
           <div class="preview-title">{previewNote.title || previewNote.id}</div>
-          <div class="preview-divider"></div>
-          <div class="preview-text">
+          <div class="sep"></div>
+          <div class="preview-md">
             {@html renderMarkdown(previewNote.content?.split('\n').slice(0, 20).join('\n') || '')}
           </div>
         {:else}
-          <div class="no-preview">Select a note to preview</div>
+          <div class="empty-msg">Select a note to preview</div>
         {/if}
       </div>
     </div>
   </div>
 {/if}
 
-<!-- Note View -->
+<!-- ─── Note View ─────────────────────────────────────────────── -->
 {#if viewMode === 'note' && selectedNote}
   {#if editMode}
-    <!-- Edit Mode: Split view with preview -->
-    <div class="note-view-split">
-      <div class="note-editor">
-        <div class="note-header">
-          <input 
-            bind:value={title} 
+    <div class="note-split">
+      <div class="note-editor-pane">
+        <div class="note-bar">
+          <input
+            bind:value={title}
             placeholder="Title"
-            class="note-title-input-header"
+            class="title-input"
           />
           <div class="note-actions">
             <button on:click={save} disabled={saving}>
@@ -314,48 +402,143 @@
             <button on:click={() => editMode = false}>View (esc)</button>
           </div>
         </div>
-        <div class="note-content">
-          <textarea 
+        <div class="editor-body">
+          <textarea
             bind:value={content}
             placeholder="Write your note..."
           ></textarea>
         </div>
-        <div class="note-help">ctrl+s=save | esc=view</div>
+        <div class="status-help">
+          <span class="key-hint">ctrl+s</span> save
+          <span class="key-hint">esc</span> view
+        </div>
       </div>
-      
-      <div class="note-preview">
-        <div class="preview-header-note">Live Preview</div>
-        <div class="preview-content-note">
+
+      <div class="note-preview-pane">
+        <div class="note-bar">
+          <span class="bar-label">Live Preview</span>
+        </div>
+        <div class="preview-md-body">
           {@html renderMarkdown(content || '')}
         </div>
       </div>
     </div>
   {:else}
-    <!-- View Mode: Full width -->
-    <div class="note-view-full">
-      <div class="note-header">
-        <div class="note-title-display">{title || 'Untitled'}</div>
-        <div class="note-actions">
-          <button on:click={() => editMode = true}>Edit (e)</button>
-          <button on:click={() => viewMode = 'tree'}>Back (esc)</button>
-        </div>
+    <div class="note-full">
+      <!-- Header bar -->
+      <div class="note-header-bar">
+        <span class="note-title-text">{title || 'Untitled'}</span>
+        {#if selectedNote.tags?.length}
+          {#each selectedNote.tags as tag}
+            <span class="note-tag">#{tag}</span>
+          {/each}
+        {/if}
+        <span class="note-date">{formatDate(selectedNote.updated_at || selectedNote.created_at)}</span>
       </div>
+      <div class="sep"></div>
+
+      <!-- Content -->
       <div class="note-view-content">
         {@html renderMarkdown(content || '')}
       </div>
-      <div class="note-help">jk=scroll | e=edit | h=home | esc=back</div>
+
+      <!-- Footer -->
+      <div class="sep"></div>
+      <div class="note-status-bar">
+        <span>View</span>
+      </div>
+      <div class="status-help">
+        <span class="key-hint">jk</span> scroll
+        <span class="key-hint">e</span> edit
+        <span class="key-hint">c</span> config
+        <span class="key-hint">h</span> home
+        <span class="key-hint">esc</span> back
+      </div>
     </div>
   {/if}
 {/if}
 
-<!-- Search Modal -->
+<!-- ─── Config View ───────────────────────────────────────────── -->
+{#if viewMode === 'config'}
+  <div class="config-view">
+    <!-- Left: Settings -->
+    <div class="config-left">
+      <div class="config-title">Lumi Settings</div>
+
+      <div class="config-items">
+        {#each configItems as item, i}
+          {#if item.kind === 'header'}
+            <div class="config-header" class:first={i === 0}>{item.label}</div>
+          {:else if item.kind === 'cycle'}
+            <div class="config-row" class:active={i === configCursor}>
+              <span class="config-label">{item.label}</span>
+              <span class="config-value">&lt; {item.value} &gt;</span>
+            </div>
+          {/if}
+        {/each}
+      </div>
+
+      <!-- Color swatches -->
+      <div class="config-swatches">
+        <span class="swatch" style="color: var(--color-primary)">██</span>
+        <span class="swatch" style="color: var(--color-secondary)">██</span>
+        <span class="swatch" style="color: var(--color-accent)">██</span>
+        <span class="swatch" style="color: var(--color-muted)">██</span>
+        <span class="swatch" style="color: var(--color-text)">██</span>
+        <span class="swatch" style="color: var(--color-error)">██</span>
+        <span class="swatch" style="color: var(--color-warning)">██</span>
+        <span class="swatch" style="color: var(--color-info)">██</span>
+      </div>
+
+      <div class="status-help">
+        <span class="key-hint">j/k</span> move
+        <span class="key-hint">h/l</span> change
+        <span class="key-hint">esc</span> back
+      </div>
+    </div>
+
+    <!-- Separator -->
+    <div class="config-sep">
+      {#each Array(60) as _}
+        <div class="sep-char">│</div>
+      {/each}
+    </div>
+
+    <!-- Right: Preview -->
+    <div class="config-right">
+      <!-- Preview header -->
+      <div class="preview-header-row">
+        <span class="preview-h-title">Sample Note</span>
+        <span class="preview-h-tag">#demo</span>
+        <span class="preview-h-tag">#theme</span>
+        <span class="preview-h-date">Jan 1, 2026</span>
+      </div>
+      <div class="sep"></div>
+
+      <!-- Sample markdown -->
+      <div class="config-preview-md">
+        {@html renderMarkdown(sampleMarkdown)}
+      </div>
+
+      <!-- Footer -->
+      <div class="config-preview-footer">
+        <div class="sep"></div>
+        <div class="note-status-bar">
+          <span>Ln 1  Col 1</span>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- ─── Search Modal ──────────────────────────────────────────── -->
 {#if showSearch}
   <div class="modal-overlay" on:click={() => showSearch = false}>
     <div class="search-modal" on:click|stopPropagation>
-      <div class="modal-title">🔍 Find Notes</div>
-      
+      <div class="modal-title">Find Notes</div>
+
       <div class="search-input-box">
-        <input 
+        <input
           type="text"
           bind:value={searchQuery}
           on:input={() => performSearch()}
@@ -368,63 +551,86 @@
         <div class="search-results">
           <div class="results-header">Results ({searchResults.length})</div>
           {#each searchResults.slice(0, 10) as result, i}
-            <div 
+            <div
               class="result-item"
               class:active={i === searchCursor}
               on:click={() => { searchCursor = i; openNote(result); showSearch = false; }}
             >
-              <span class="icon">📄</span>
-              <span class="name">{result.name}</span>
+              <span class="tree-name">{result.name}</span>
             </div>
           {/each}
           {#if searchResults.length === 0}
-            <div class="no-results">No results</div>
+            <div class="empty-msg">No results</div>
           {/if}
         </div>
 
         <div class="search-preview">
           {#if searchResults[searchCursor]?.data}
             <div class="preview-title">{searchResults[searchCursor].name}</div>
-            <div class="preview-divider"></div>
-            <div class="preview-text">
+            <div class="sep"></div>
+            <div class="preview-md">
               {@html renderMarkdown(searchResults[searchCursor].data.content?.split('\n').slice(0, 10).join('\n') || '')}
             </div>
           {:else}
-            <div class="no-preview">No preview available</div>
+            <div class="empty-msg">No preview available</div>
           {/if}
         </div>
       </div>
 
-      <div class="modal-help">ctrl+j/k=navigate | enter=open | esc=close</div>
+      <div class="status-help">
+        <span class="key-hint">ctrl+j/k</span> navigate
+        <span class="key-hint">enter</span> open
+        <span class="key-hint">esc</span> close
+      </div>
     </div>
   </div>
 {/if}
 
 <style>
-  :global(body), :global(html) {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    overflow: hidden;
+  /* ── Shared ──────────────────────────────────────────────────── */
+  .sep {
+    height: 1px;
+    background: var(--color-separator);
+    width: 100%;
   }
 
-  * { 
-    box-sizing: border-box; 
-    margin: 0; 
-    padding: 0; 
+  .key-hint {
+    color: var(--color-secondary);
+    font-weight: 700;
   }
 
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+  .status-help {
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--color-separator);
+    font-size: 0.85rem;
+    color: var(--color-muted);
+    text-align: center;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
   }
 
-  @keyframes slideUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+  .empty-msg {
+    padding: 2rem;
+    text-align: center;
+    color: var(--color-muted);
+    font-style: italic;
   }
 
-  /* Home View */
+  .error-toast {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    background: var(--color-error);
+    color: var(--color-background);
+    padding: 0.75rem 1.25rem;
+    border-radius: 4px;
+    z-index: 2000;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  /* ── Home View ───────────────────────────────────────────────── */
   .home-view {
     display: flex;
     flex-direction: column;
@@ -432,58 +638,50 @@
     justify-content: center;
     height: 100vh;
     width: 100vw;
-    background: #000;
-    color: #e5e5e5;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    animation: fadeIn 0.4s ease-out;
+    background: var(--color-background);
+    color: var(--color-text);
   }
 
-  .ascii-art {
-    font-family: monospace;
+  .logo {
     font-size: 0.75rem;
     line-height: 1.2;
-    background: linear-gradient(135deg, #c084fc 0%, #e879f9 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
     font-weight: bold;
     white-space: pre;
     margin-bottom: 2rem;
-    animation: slideUp 0.6s ease-out;
+  }
+
+  .logo-line {
+    /* color set via inline style from logoColors */
   }
 
   .subtitle {
-    color: #a3a3a3;
+    color: var(--color-muted);
     margin-bottom: 3rem;
-    animation: slideUp 0.7s ease-out;
   }
 
   .home-keys {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    color: #d4d4d4;
+    color: var(--color-text);
     font-size: 0.95rem;
     text-align: center;
-    animation: slideUp 0.8s ease-out;
   }
 
-  /* Tree View - 3 Column */
-  .tree-view-3col {
+  /* ── Tree View ───────────────────────────────────────────────── */
+  .tree-view {
     display: grid;
-    grid-template-columns: 1fr 2fr 2fr;
+    grid-template-columns: 1fr 1.3fr 1.7fr;
     height: 100vh;
     width: 100vw;
-    background: #000;
-    color: #e5e5e5;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    animation: fadeIn 0.4s ease-out;
+    background: var(--color-background);
+    color: var(--color-text);
   }
 
-  .parent-col, .center-col, .preview-col {
+  .tree-col {
     display: flex;
     flex-direction: column;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-right: 1px solid var(--color-separator);
     overflow: hidden;
   }
 
@@ -492,383 +690,448 @@
   }
 
   .col-header {
-    padding: 1.5rem 1.5rem 1rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--color-separator);
     font-weight: 600;
-    font-size: 0.875rem;
-    color: #a3a3a3;
+    font-size: 0.85rem;
+    color: var(--color-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
 
-  .center-col .col-header {
-    background: linear-gradient(135deg, #c084fc 0%, #e879f9 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-size: 1rem;
+  .col-header-primary {
+    color: var(--color-primary);
     text-transform: none;
+    font-size: 0.95rem;
   }
 
-  .col-content {
+  .col-body {
     flex: 1;
     overflow-y: auto;
-    padding: 0.75rem;
+    padding: 0.5rem;
   }
 
   .col-help {
-    padding: 1rem 1.5rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    font-size: 0.85rem;
-    color: #737373;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--color-separator);
+    font-size: 0.8rem;
+    color: var(--color-muted);
     text-align: center;
-    font-family: 'SF Mono', monospace;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
   }
 
   .parent-item {
-    padding: 0.75rem 1rem;
-    color: #a3a3a3;
-    font-size: 0.95rem;
+    padding: 0.5rem 0.75rem;
+    color: var(--color-muted);
   }
 
   .tree-item {
     display: flex;
     align-items: center;
-    gap: 0.875rem;
-    padding: 0.875rem 1rem;
-    margin-bottom: 0.375rem;
-    border-radius: 10px;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .tree-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-    transform: translateX(4px);
+    background: var(--color-selected-bg);
   }
 
   .tree-item.active {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    color: white;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-    transform: translateX(4px);
+    background: var(--color-selected-bg);
+    color: var(--color-accent);
+  }
+
+  .tree-icon {
+    color: var(--color-muted);
+    width: 1ch;
+    flex-shrink: 0;
+  }
+
+  .tree-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .preview-body {
+    padding: 1rem 1.25rem;
   }
 
   .preview-title {
-    font-size: 1.25rem;
+    font-size: 1.1rem;
     font-weight: 600;
-    color: #fbbf24;
-    margin-bottom: 1rem;
+    color: var(--color-primary);
+    margin-bottom: 0.75rem;
   }
 
-  .preview-divider {
-    height: 1px;
-    background: rgba(255, 255, 255, 0.1);
-    margin-bottom: 1rem;
+  .preview-md {
+    color: var(--color-text);
+    line-height: 1.6;
+    font-size: 0.9rem;
   }
 
-  .preview-text {
-    color: #d4d4d4;
+  /* ── Note View — Full ────────────────────────────────────────── */
+  .note-full {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    background: var(--color-background);
+    color: var(--color-text);
+  }
+
+  .note-header-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .note-title-text {
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: var(--color-primary);
+  }
+
+  .note-tag {
+    color: var(--color-accent);
+    font-size: 0.85rem;
+  }
+
+  .note-date {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    margin-left: auto;
+  }
+
+  .note-view-content {
+    flex: 1;
+    padding: 1.5rem;
+    overflow-y: auto;
     line-height: 1.7;
-    font-size: 0.95rem;
+    scroll-behavior: smooth;
   }
 
-  .preview-text :global(h1) { display: none; } /* Hide title in tree preview */
-  .preview-text :global(h2) { color: #60a5fa; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
-  .preview-text :global(h3) { color: #34d399; font-size: 1.1em; margin: 1em 0 0.5em; font-weight: 600; }
-  .preview-text :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
-  .preview-text :global(.wiki-link) { color: #60a5fa; text-decoration: underline; }
-
-  .no-preview {
-    padding: 2rem;
-    text-align: center;
-    color: #737373;
-    font-style: italic;
+  .note-status-bar {
+    padding: 0.5rem 1.5rem;
+    background: var(--color-selected-bg);
+    color: var(--color-primary);
+    font-size: 0.85rem;
   }
 
-  /* Note View - Split */
-  .note-view-split {
+  /* ── Note View — Split (Edit) ────────────────────────────────── */
+  .note-split {
     display: grid;
     grid-template-columns: 1fr 1fr;
     height: 100vh;
     width: 100vw;
-    background: #000;
-    color: #e5e5e5;
-    animation: fadeIn 0.4s ease-out;
+    background: var(--color-background);
+    color: var(--color-text);
   }
 
-  /* Note View - Full Width (View Mode) */
-  .note-view-full {
+  .note-editor-pane {
     display: flex;
     flex-direction: column;
-    height: 100vh;
-    width: 100vw;
-    background: #000;
-    color: #e5e5e5;
-    animation: fadeIn 0.4s ease-out;
+    border-right: 1px solid var(--color-separator);
   }
 
-  .note-editor {
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .note-preview {
+  .note-preview-pane {
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
 
-  .preview-header-note {
-    padding: 2rem 2.5rem 1.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    font-weight: 600;
-    color: #a3a3a3;
-    font-size: 0.875rem;
+  .note-bar {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--color-separator);
+    align-items: center;
+  }
+
+  .bar-label {
+    color: var(--color-muted);
+    font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
 
-  .preview-content-note {
+  .title-input {
     flex: 1;
-    padding: 2.5rem;
-    overflow-y: auto;
-    font-size: 1rem;
-    line-height: 1.8;
-    color: #d4d4d4;
-  }
-
-  .preview-content-note :global(h1) { display: none; } /* Hide title in preview */
-  .preview-content-note :global(h2) { color: #60a5fa; font-size: 1.5em; margin: 1em 0 0.5em; font-weight: 600; }
-  .preview-content-note :global(h3) { color: #34d399; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
-  .preview-content-note :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
-  .preview-content-note :global(.wiki-link) { color: #60a5fa; text-decoration: underline; }
-
-  .note-title-display {
-    flex: 1;
-    font-size: 1.375rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--color-overlay-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    color: var(--color-text);
+    font-size: 1.05rem;
     font-weight: 600;
-    color: #c084fc; /* Purple-pink */
+    font-family: inherit;
   }
 
-  /* Animations for mode transitions */
-  .note-view-split, .note-view-full {
-    animation: fadeIn 0.3s ease-out;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  .note-title-input {
-    width: 100%;
-    padding: 0.875rem 1.25rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    color: #e5e5e5;
-    font-size: 1.125rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-  }
-
-  .note-title-input:focus {
+  .title-input:focus {
     outline: none;
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.1);
-  }
-
-  .note-view-content {
-    padding: 2.5rem;
-    overflow-y: auto;
-    line-height: 1.8;
-    scroll-behavior: smooth;
-  }
-
-  .note-view-content :global(h1) { display: none; } /* Hide title in content */
-  .note-view-content :global(h2) { color: #60a5fa; font-size: 1.5em; margin: 1em 0 0.5em; font-weight: 600; }
-  .note-view-content :global(h3) { color: #34d399; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
-  .note-view-content :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
-  .note-view-content :global(.wiki-link) { color: #60a5fa; text-decoration: underline; }
-
-  .note-header {
-    display: flex;
-    gap: 1rem;
-    padding: 2rem 2.5rem 1.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    align-items: center;
-  }
-
-  .note-title-input-header {
-    flex: 1;
-    padding: 0.875rem 1.25rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    color: #e5e5e5;
-    font-size: 1.375rem;
-    font-weight: 600;
-    transition: all 0.2s;
-  }
-
-  .note-title-input-header:focus {
-    outline: none;
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.1);
-  }
-
-  .note-title {
-    flex: 1;
-    padding: 0.875rem 1.25rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    color: #e5e5e5;
-    font-size: 1.375rem;
-    font-weight: 600;
-    transition: all 0.2s;
-  }
-
-  .note-title:focus {
-    outline: none;
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.1);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--color-primary);
   }
 
   .note-actions {
     display: flex;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   button {
-    padding: 0.875rem 1.75rem;
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    color: white;
-    border: none;
-    border-radius: 10px;
+    padding: 0.5rem 1rem;
+    background: var(--color-selected-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    font-size: 0.95rem;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+    font-size: 0.85rem;
+    font-family: inherit;
   }
 
   button:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
   }
 
   button:disabled {
-    background: rgba(255, 255, 255, 0.1);
+    opacity: 0.4;
     cursor: not-allowed;
-    box-shadow: none;
   }
 
-  .note-content {
+  .editor-body {
     flex: 1;
-    padding: 2.5rem;
+    padding: 1.25rem;
   }
 
-  .note-content textarea {
+  .editor-body textarea {
     width: 100%;
     height: 100%;
     background: transparent;
     border: none;
-    color: #e5e5e5;
-    font-family: 'SF Mono', monospace;
-    font-size: 1rem;
-    line-height: 1.8;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 0.95rem;
+    line-height: 1.7;
     resize: none;
   }
 
-  .note-content textarea:focus {
+  .editor-body textarea:focus {
     outline: none;
   }
 
-  .note-help {
-    padding: 1.25rem 2.5rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    font-size: 0.85rem;
-    color: #737373;
-    text-align: center;
-    font-family: 'SF Mono', monospace;
+  .preview-md-body {
+    flex: 1;
+    padding: 1.25rem;
+    overflow-y: auto;
+    line-height: 1.7;
+    font-size: 0.95rem;
   }
 
-  /* Search Modal */
+  /* ── Config View ─────────────────────────────────────────────── */
+  .config-view {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    background: var(--color-background);
+    color: var(--color-text);
+  }
+
+  .config-left {
+    width: 38%;
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem;
+  }
+
+  .config-title {
+    text-align: center;
+    font-weight: 700;
+    color: var(--color-primary);
+    font-size: 1.1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .config-items {
+    flex: 1;
+  }
+
+  .config-header {
+    font-weight: 700;
+    color: var(--color-primary);
+    padding: 0.25rem 0.5rem;
+    margin-top: 1rem;
+  }
+  .config-header.first {
+    margin-top: 0;
+  }
+
+  .config-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.4rem 1.5rem;
+  }
+
+  .config-row .config-label {
+    color: var(--color-text);
+  }
+
+  .config-row .config-value {
+    color: var(--color-muted);
+  }
+
+  .config-row.active {
+    background: var(--color-selected-bg);
+  }
+
+  .config-row.active .config-label {
+    color: var(--color-accent);
+  }
+
+  .config-row.active .config-value {
+    color: var(--color-secondary);
+    font-weight: 700;
+  }
+
+  .config-swatches {
+    text-align: center;
+    padding: 1rem 0;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    font-size: 0.9rem;
+  }
+
+  .config-sep {
+    display: flex;
+    flex-direction: column;
+    color: var(--color-separator);
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0;
+    user-select: none;
+  }
+
+  .sep-char {
+    text-align: center;
+    height: calc(100vh / 60);
+  }
+
+  .config-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem;
+    overflow: hidden;
+  }
+
+  .preview-header-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .preview-h-title {
+    font-weight: 700;
+    color: var(--color-primary);
+    font-size: 1.05rem;
+  }
+
+  .preview-h-tag {
+    color: var(--color-accent);
+    font-size: 0.85rem;
+  }
+
+  .preview-h-date {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    margin-left: auto;
+  }
+
+  .config-preview-md {
+    flex: 1;
+    padding: 0.75rem 0;
+    overflow-y: auto;
+    line-height: 1.6;
+    font-size: 0.9rem;
+  }
+
+  .config-preview-footer {
+    margin-top: auto;
+  }
+
+  /* ── Search Modal ────────────────────────────────────────────── */
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.7);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    animation: fadeIn 0.2s ease-out;
   }
 
   .search-modal {
     width: 90%;
-    max-width: 900px;
+    max-width: 850px;
     max-height: 80vh;
-    background: linear-gradient(180deg, #0a0a0a 0%, #050505 100%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    padding: 2rem;
+    background: var(--color-overlay-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-    animation: slideUp 0.3s ease-out;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    gap: 1rem;
   }
 
   .modal-title {
-    font-size: 1.5rem;
+    font-size: 1.1rem;
     font-weight: 700;
-    background: linear-gradient(135deg, #c084fc 0%, #e879f9 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--color-primary);
   }
 
   .search-input-box input {
     width: 100%;
-    padding: 1rem 1.25rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    color: #e5e5e5;
-    font-size: 1rem;
-    transition: all 0.2s;
+    padding: 0.6rem 0.75rem;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    color: var(--color-text);
+    font-size: 0.95rem;
+    font-family: inherit;
   }
 
   .search-input-box input:focus {
     outline: none;
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.1);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--color-primary);
   }
 
   .search-content {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
+    gap: 1rem;
     flex: 1;
-    min-height: 400px;
-    transition: all 0.3s ease-out;
+    min-height: 300px;
   }
 
   .search-results {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.25rem;
     overflow-y: auto;
   }
 
   .results-header {
-    font-size: 0.875rem;
-    color: #a3a3a3;
+    font-size: 0.8rem;
+    color: var(--color-muted);
     margin-bottom: 0.5rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -877,111 +1140,24 @@
   .result-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
+    padding: 0.4rem 0.75rem;
     cursor: pointer;
-    transition: all 0.2s;
   }
 
   .result-item:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--color-selected-bg);
   }
 
   .result-item.active {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    color: white;
+    background: var(--color-selected-bg);
+    color: var(--color-accent);
   }
 
   .search-preview {
-    padding: 1.5rem;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
+    padding: 1rem;
+    background: var(--color-background);
+    border: 1px solid var(--color-separator);
+    border-radius: 3px;
     overflow-y: auto;
-  }
-
-  .preview-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #fbbf24;
-    margin-bottom: 1rem;
-  }
-
-  .preview-divider {
-    height: 1px;
-    background: rgba(255, 255, 255, 0.1);
-    margin-bottom: 1rem;
-  }
-
-  .preview-text {
-    color: #d4d4d4;
-    line-height: 1.7;
-    font-size: 0.95rem;
-  }
-
-  .preview-text :global(h1) { display: none; } /* Hide title in search preview */
-  .preview-text :global(h2) { color: #60a5fa; font-size: 1.25em; margin: 1em 0 0.5em; font-weight: 600; }
-  .preview-text :global(h3) { color: #34d399; font-size: 1.1em; margin: 1em 0 0.5em; font-weight: 600; }
-  .preview-text :global(code) { background: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; color: #f87171; }
-  .preview-text :global(.wiki-link) { color: #60a5fa; text-decoration: underline; }
-
-  .no-results, .no-preview {
-    padding: 2rem;
-    text-align: center;
-    color: #737373;
-    font-style: italic;
-  }
-
-  .modal-help {
-    font-size: 0.85rem;
-    color: #737373;
-    text-align: center;
-    font-family: 'SF Mono', monospace;
-  }
-
-  .icon {
-    font-size: 1.25rem;
-    flex-shrink: 0;
-  }
-
-  .name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 500;
-  }
-
-  .error {
-    position: fixed;
-    top: 1.5rem;
-    right: 1.5rem;
-    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-    color: white;
-    padding: 1rem 1.5rem;
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(220, 38, 38, 0.3);
-    z-index: 2000;
-    max-width: 400px;
-    animation: slideUp 0.3s ease-out;
-  }
-
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 10px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
   }
 </style>
