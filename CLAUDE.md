@@ -109,3 +109,27 @@ tags:
 - **Go style**: `gofmt`/`goimports`, meaningful package names (`domain`, `filesystem`, not `utils`), explicit error handling
 - **Svelte style**: One component per file, reactive declarations over manual updates
 - **Auth**: All server requests require `X-Lumi-Token` header matching `LUMI_PASSWORD` env var
+
+## Subtree Remotes
+
+Each component is published as a standalone repo under the [lumi-notes](https://github.com/lumi-notes) org via `git subtree`. The monorepo (`ViniZap4/lumi`) is the primary repo.
+
+| Remote | Repo | Prefix |
+|--------|------|--------|
+| `lumi-tui` | `lumi-notes/lumi-tui` | `tui-client/` |
+| `lumi-server` | `lumi-notes/lumi-server` | `server/` |
+| `lumi-web` | `lumi-notes/lumi-web` | `web-client/` |
+
+### Push to standalone repos
+```bash
+git subtree push --prefix=tui-client lumi-tui main
+git subtree push --prefix=server lumi-server main
+git subtree push --prefix=web-client lumi-web main
+```
+
+### Pull from standalone repos
+```bash
+git subtree pull --prefix=tui-client lumi-tui main --squash
+git subtree pull --prefix=server lumi-server main --squash
+git subtree pull --prefix=web-client lumi-web main --squash
+```

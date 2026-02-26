@@ -2,6 +2,56 @@
 
 A local-first, Markdown-based note-taking system with beautiful TUI and web clients.
 
+## 📦 Repository Structure
+
+This monorepo contains all lumi components. Each component is also published as a standalone repo under the [lumi-notes](https://github.com/lumi-notes) GitHub organization:
+
+| Component | Monorepo Path | Standalone Repo |
+|-----------|--------------|-----------------|
+| TUI Client | [`tui-client/`](tui-client/) | [lumi-notes/lumi-tui](https://github.com/lumi-notes/lumi-tui) |
+| Server | [`server/`](server/) | [lumi-notes/lumi-server](https://github.com/lumi-notes/lumi-server) |
+| Web Client | [`web-client/`](web-client/) | [lumi-notes/lumi-web](https://github.com/lumi-notes/lumi-web) |
+
+### Clone the Full Monorepo
+
+```bash
+git clone git@github.com:ViniZap4/lumi.git
+```
+
+### Clone Individual Components
+
+```bash
+git clone git@github.com:lumi-notes/lumi-tui.git
+git clone git@github.com:lumi-notes/lumi-server.git
+git clone git@github.com:lumi-notes/lumi-web.git
+```
+
+### Subtree Workflow (Maintainers)
+
+The standalone repos are synced from this monorepo via `git subtree`. To set up the remotes:
+
+```bash
+git remote add lumi-tui git@github.com:lumi-notes/lumi-tui.git
+git remote add lumi-server git@github.com:lumi-notes/lumi-server.git
+git remote add lumi-web git@github.com:lumi-notes/lumi-web.git
+```
+
+Push changes to a standalone repo:
+
+```bash
+git subtree push --prefix=tui-client lumi-tui main
+git subtree push --prefix=server lumi-server main
+git subtree push --prefix=web-client lumi-web main
+```
+
+Pull changes from a standalone repo back into the monorepo:
+
+```bash
+git subtree pull --prefix=tui-client lumi-tui main --squash
+git subtree pull --prefix=server lumi-server main --squash
+git subtree pull --prefix=web-client lumi-web main --squash
+```
+
 ## ✨ Features
 
 ### TUI (Terminal)
