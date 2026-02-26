@@ -2,10 +2,16 @@ package ui
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vinizap/lumi/tui-client/theme"
 )
+
+// isAlphanumeric returns true if r is a letter or digit (used for underscore flanking rules).
+func isAlphanumeric(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
 
 // Inline class constants for per-character styling within a line.
 const (
@@ -18,6 +24,12 @@ const (
 	clsDim // delimiters, URLs, brackets
 	clsListMarker
 	clsStrike
+	clsCodeLang
+	clsTableHeader
+	clsTableSep
+	clsWikiLink
+	clsCheckbox
+	clsCheckboxChecked
 )
 
 // shouldClassifyInline returns true if the line should receive inline highlighting.
@@ -25,6 +37,11 @@ const (
 // level and skip inline classification.
 func shouldClassifyInline(line string, inCode bool) bool {
 	if inCode {
+		// Allow fence lines with a language tag (e.g. ```go) to get classification
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") && len(strings.TrimSpace(trimmed[3:])) > 0 {
+			return true
+		}
 		return false
 	}
 	trimmed := strings.TrimSpace(line)
@@ -57,6 +74,25 @@ func classifyInline(line string) []int {
 	}
 	cls := make([]int, n)
 	used := make([]bool, n)
+
+	// --- Code fence with language tag (e.g. ```go) ---
+	trimmedFence := strings.TrimSpace(string(runes))
+	if strings.HasPrefix(trimmedFence, "```") && len(strings.TrimSpace(trimmedFence[3:])) > 0 {
+		// Find where backticks start in the original runes (skip leading whitespace)
+		offset := 0
+		for offset < n && (runes[offset] == ' ' || runes[offset] == '\t') {
+			offset++
+		}
+		// Mark backticks as dim
+		for k := offset; k < offset+3 && k < n; k++ {
+			cls[k] = clsDim
+		}
+		// Mark language name as clsCodeLang
+		for k := offset + 3; k < n; k++ {
+			cls[k] = clsCodeLang
+		}
+		return cls
+	}
 
 	// --- Table lines ---
 	trimmedLine := strings.TrimSpace(string(runes))
@@ -115,6 +151,24 @@ func classifyInline(line string) []int {
 		for k := ls; k < ls+ml && k < n; k++ {
 			cls[k] = clsListMarker
 			used[k] = true
+		}
+
+		// --- Checkboxes (- [ ] or - [x]/- [X]) after list marker ---
+		cbStart := ls + ml
+		if ml > 0 && cbStart+3 <= n && runes[cbStart] == '[' && runes[cbStart+2] == ']' {
+			if runes[cbStart+1] == ' ' {
+				// Unchecked: [ ]
+				for k := cbStart; k < cbStart+3 && k < n; k++ {
+					cls[k] = clsCheckbox
+					used[k] = true
+				}
+			} else if runes[cbStart+1] == 'x' || runes[cbStart+1] == 'X' {
+				// Checked: [x] or [X]
+				for k := cbStart; k < cbStart+3 && k < n; k++ {
+					cls[k] = clsCheckboxChecked
+					used[k] = true
+				}
+			}
 		}
 	}
 
@@ -181,6 +235,52 @@ func classifyInline(line string) []int {
 		i++
 	}
 
+	// --- Bold italic (___...___)  ---
+	for i := 0; i < n; {
+		if used[i] {
+			i++
+			continue
+		}
+		if i+2 < n && runes[i] == '_' && runes[i+1] == '_' && runes[i+2] == '_' {
+			// Flanking: opening ___ must NOT be preceded by alphanumeric
+			if i > 0 && isAlphanumeric(runes[i-1]) {
+				i++
+				continue
+			}
+			j := i + 3
+			for j+2 < n {
+				if !used[j] && runes[j] == '_' && runes[j+1] == '_' && runes[j+2] == '_' {
+					break
+				}
+				j++
+			}
+			if j+2 < n && j > i+3 {
+				// Flanking: closing ___ must NOT be followed by alphanumeric
+				if j+3 < n && isAlphanumeric(runes[j+3]) {
+					i++
+					continue
+				}
+				for k := i; k < i+3; k++ {
+					cls[k] = clsDim
+					used[k] = true
+				}
+				for k := j; k < j+3; k++ {
+					cls[k] = clsDim
+					used[k] = true
+				}
+				for k := i + 3; k < j; k++ {
+					if !used[k] {
+						cls[k] = clsBoldItalic
+						used[k] = true
+					}
+				}
+				i = j + 3
+				continue
+			}
+		}
+		i++
+	}
+
 	// --- Bold (**...**) ---
 	for i := 0; i < n; {
 		if used[i] {
@@ -225,6 +325,60 @@ func classifyInline(line string) []int {
 		i++
 	}
 
+	// --- Bold (__...__) ---
+	for i := 0; i < n; {
+		if used[i] {
+			i++
+			continue
+		}
+		if i+1 < n && runes[i] == '_' && runes[i+1] == '_' {
+			if i+2 < n && runes[i+2] == '_' {
+				i++
+				continue
+			}
+			// Flanking: opening __ must NOT be preceded by alphanumeric
+			if i > 0 && isAlphanumeric(runes[i-1]) {
+				i++
+				continue
+			}
+			j := i + 2
+			for j+1 < n {
+				if !used[j] && runes[j] == '_' && runes[j+1] == '_' {
+					if j+2 < n && runes[j+2] == '_' {
+						j++
+						continue
+					}
+					break
+				}
+				j++
+			}
+			if j+1 < n && j > i+2 {
+				// Flanking: closing __ must NOT be followed by alphanumeric
+				if j+2 < n && isAlphanumeric(runes[j+2]) {
+					i++
+					continue
+				}
+				cls[i] = clsDim
+				cls[i+1] = clsDim
+				used[i] = true
+				used[i+1] = true
+				cls[j] = clsDim
+				cls[j+1] = clsDim
+				used[j] = true
+				used[j+1] = true
+				for k := i + 2; k < j; k++ {
+					if !used[k] {
+						cls[k] = clsBold
+						used[k] = true
+					}
+				}
+				i = j + 2
+				continue
+			}
+		}
+		i++
+	}
+
 	// --- Italic (*...*) ---
 	for i := 0; i < n; {
 		if used[i] {
@@ -244,6 +398,52 @@ func classifyInline(line string) []int {
 				j++
 			}
 			if j < n && j > i+1 {
+				cls[i] = clsDim
+				cls[j] = clsDim
+				used[i] = true
+				used[j] = true
+				for k := i + 1; k < j; k++ {
+					if !used[k] {
+						cls[k] = clsItalic
+						used[k] = true
+					}
+				}
+				i = j + 1
+				continue
+			}
+		}
+		i++
+	}
+
+	// --- Italic (_..._) ---
+	for i := 0; i < n; {
+		if used[i] {
+			i++
+			continue
+		}
+		if runes[i] == '_' {
+			if i+1 < n && runes[i+1] == '_' {
+				i++
+				continue
+			}
+			// Flanking: opening _ must NOT be preceded by alphanumeric
+			if i > 0 && isAlphanumeric(runes[i-1]) {
+				i++
+				continue
+			}
+			j := i + 1
+			for j < n {
+				if !used[j] && runes[j] == '_' && (j+1 >= n || runes[j+1] != '_') {
+					break
+				}
+				j++
+			}
+			if j < n && j > i+1 {
+				// Flanking: closing _ must NOT be followed by alphanumeric
+				if j+1 < n && isAlphanumeric(runes[j+1]) {
+					i++
+					continue
+				}
 				cls[i] = clsDim
 				cls[j] = clsDim
 				used[i] = true
@@ -322,7 +522,7 @@ func classifyInline(line string) []int {
 				used[j+1] = true
 				for k := i + 2; k < j; k++ {
 					if !used[k] {
-						cls[k] = clsLinkText
+						cls[k] = clsWikiLink
 						used[k] = true
 					}
 				}
@@ -375,6 +575,30 @@ func classifyInline(line string) []int {
 	return cls
 }
 
+// classifyInlineWithCtx wraps classifyInline and upgrades classifications
+// based on table context — header cells become clsTableHeader, separator
+// rows become clsTableSep.
+func classifyInlineWithCtx(line string, tctx tableLineCtx) []int {
+	cls := classifyInline(line)
+	if cls == nil {
+		return nil
+	}
+	if tctx.isSeparator {
+		for i := range cls {
+			cls[i] = clsTableSep
+		}
+		return cls
+	}
+	if tctx.isHeader {
+		for i, c := range cls {
+			if c == clsNormal {
+				cls[i] = clsTableHeader
+			}
+		}
+	}
+	return cls
+}
+
 // resolveInlineStyle maps an inline class to a lipgloss style, using baseStyle
 // as the foundation for bold/italic (so they inherit the line-level foreground).
 func resolveInlineStyle(cls int, baseStyle lipgloss.Style) lipgloss.Style {
@@ -390,12 +614,24 @@ func resolveInlineStyle(cls int, baseStyle lipgloss.Style) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(t.Accent)
 	case clsLinkText:
 		return lipgloss.NewStyle().Foreground(t.Info).Underline(true)
+	case clsWikiLink:
+		return lipgloss.NewStyle().Foreground(t.Secondary).Bold(true).Underline(true)
 	case clsDim:
-		return lipgloss.NewStyle().Foreground(t.TextDim)
+		return baseStyle.Foreground(t.TextDim)
+	case clsCodeLang:
+		return baseStyle.Foreground(t.Info).Bold(true)
 	case clsListMarker:
 		return lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	case clsStrike:
 		return lipgloss.NewStyle().Foreground(t.TextDim).Strikethrough(true)
+	case clsTableHeader:
+		return baseStyle.Bold(true).Foreground(t.Secondary)
+	case clsTableSep:
+		return lipgloss.NewStyle().Foreground(t.Muted)
+	case clsCheckbox:
+		return lipgloss.NewStyle().Foreground(t.Muted).Bold(true)
+	case clsCheckboxChecked:
+		return lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	default:
 		return baseStyle
 	}

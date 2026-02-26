@@ -84,6 +84,7 @@ func (m Model) renderFullNote() string {
 	}
 
 	codeLines := codeBlockLines(rawLines)
+	tableCtx := buildTableLineCtx(rawLines)
 
 	maxLines := m.viewportHeight()
 	totalLines := len(displayLines)
@@ -136,7 +137,11 @@ func (m Model) renderFullNote() string {
 
 		var inlineCls []int
 		if shouldClassifyInline(line, inCode) {
-			inlineCls = classifyInline(line)
+			if tctx, ok := tableCtx[rawIdx]; ok {
+				inlineCls = classifyInlineWithCtx(line, tctx)
+			} else {
+				inlineCls = classifyInline(line)
+			}
 		}
 		styledLine := m.renderContentLine(line, style, inlineCls, activeRange, selBg, isCursorLine)
 
@@ -199,6 +204,7 @@ func (m Model) renderFullNote() string {
 		{"y", "yank"},
 		{"e", "edit"},
 		{"t", "tree"},
+		{"x", "open url"},
 		{"/", "search"},
 		{"esc", "back"},
 	}

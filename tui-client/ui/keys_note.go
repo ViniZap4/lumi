@@ -130,9 +130,12 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchType = "filename"
 		return m, func() tea.Msg { return m.performSearch() }
 
-	// Split
+	// Split (if cursor is on a link, open that note in split directly)
 	case "s":
 		if m.visualMode == VisualNone {
+			if m.openLinkInSplit("horizontal") {
+				return m, nil
+			}
 			m.splitMode = "horizontal"
 			m.showNav = true
 			m.navDir = m.currentDir
@@ -141,6 +144,9 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "S":
 		if m.visualMode == VisualNone {
+			if m.openLinkInSplit("vertical") {
+				return m, nil
+			}
 			m.splitMode = "vertical"
 			m.showNav = true
 			m.navDir = m.currentDir
@@ -148,7 +154,14 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.loadNavItems
 		}
 
-	// Follow link
+	// Open external URL in browser (vim-like gx)
+	case "x":
+		if m.visualMode == VisualNone {
+			m.openExternalLink()
+			return m, nil
+		}
+
+	// Follow link / toggle checkbox
 	case "enter":
 		return m, m.followLinkAtCursor()
 	}
