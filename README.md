@@ -4,13 +4,13 @@ A local-first, Markdown-based note-taking system with beautiful TUI and web clie
 
 ## 📦 Repository Structure
 
-This monorepo contains all lumi components. Each component is also published as a standalone repo under the [lumi-notes](https://github.com/lumi-notes) GitHub organization:
+This monorepo contains all lumi components. Each component is also available as a standalone repo:
 
 | Component | Monorepo Path | Standalone Repo |
 |-----------|--------------|-----------------|
-| TUI Client | [`tui-client/`](tui-client/) | [lumi-notes/lumi-tui](https://github.com/lumi-notes/lumi-tui) |
-| Server | [`server/`](server/) | [lumi-notes/lumi-server](https://github.com/lumi-notes/lumi-server) |
-| Web Client | [`web-client/`](web-client/) | [lumi-notes/lumi-web](https://github.com/lumi-notes/lumi-web) |
+| TUI Client | [`tui-client/`](tui-client/) | [ViniZap4/lumi-tui](https://github.com/ViniZap4/lumi-tui) |
+| Server | [`server/`](server/) | [ViniZap4/lumi-server](https://github.com/ViniZap4/lumi-server) |
+| Web Client | [`web-client/`](web-client/) | [ViniZap4/lumi-web](https://github.com/ViniZap4/lumi-web) |
 
 ### Clone the Full Monorepo
 
@@ -21,9 +21,9 @@ git clone git@github.com:ViniZap4/lumi.git
 ### Clone Individual Components
 
 ```bash
-git clone git@github.com:lumi-notes/lumi-tui.git
-git clone git@github.com:lumi-notes/lumi-server.git
-git clone git@github.com:lumi-notes/lumi-web.git
+git clone git@github.com:ViniZap4/lumi-tui.git
+git clone git@github.com:ViniZap4/lumi-server.git
+git clone git@github.com:ViniZap4/lumi-web.git
 ```
 
 ### Subtree Workflow (Maintainers)
@@ -31,9 +31,9 @@ git clone git@github.com:lumi-notes/lumi-web.git
 The standalone repos are synced from this monorepo via `git subtree`. To set up the remotes:
 
 ```bash
-git remote add lumi-tui git@github.com:lumi-notes/lumi-tui.git
-git remote add lumi-server git@github.com:lumi-notes/lumi-server.git
-git remote add lumi-web git@github.com:lumi-notes/lumi-web.git
+git remote add lumi-tui git@github.com:ViniZap4/lumi-tui.git
+git remote add lumi-server git@github.com:ViniZap4/lumi-server.git
+git remote add lumi-web git@github.com:ViniZap4/lumi-web.git
 ```
 
 Push changes to a standalone repo:

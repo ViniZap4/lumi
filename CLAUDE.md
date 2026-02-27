@@ -112,13 +112,13 @@ tags:
 
 ## Subtree Remotes
 
-Each component is published as a standalone repo under the [lumi-notes](https://github.com/lumi-notes) org via `git subtree`. The monorepo (`ViniZap4/lumi`) is the primary repo.
+Each component is published as a standalone repo via `git subtree`. The monorepo (`ViniZap4/lumi`) is the primary repo.
 
 | Remote | Repo | Prefix |
 |--------|------|--------|
-| `lumi-tui` | `lumi-notes/lumi-tui` | `tui-client/` |
-| `lumi-server` | `lumi-notes/lumi-server` | `server/` |
-| `lumi-web` | `lumi-notes/lumi-web` | `web-client/` |
+| `lumi-tui` | `ViniZap4/lumi-tui` | `tui-client/` |
+| `lumi-server` | `ViniZap4/lumi-server` | `server/` |
+| `lumi-web` | `ViniZap4/lumi-web` | `web-client/` |
 
 ### Push to standalone repos
 ```bash
