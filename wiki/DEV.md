@@ -242,6 +242,8 @@ X-Lumi-Token: <LUMI_PASSWORD>
 
 ## Git Workflow
 
+> See [Submodules Guide](./SUBMODULES.md) for how to clone, commit, push, and pull across the monorepo submodules.
+
 ### Commit Structure
 
 ```

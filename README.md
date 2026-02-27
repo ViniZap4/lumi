@@ -147,6 +147,7 @@ npm run dev
 - [Quick Test Guide](QUICKTEST.md) - How to test everything
 - [Features Overview](FEATURES.md) - Detailed feature list
 - [Developer Wiki](wiki/DEV.md) - Architecture and development
+- [Submodules Guide](wiki/SUBMODULES.md) - How to work with the monorepo
 - [User Guide](wiki/USER.md) - Installation and usage
 
 ## 🎮 TUI Keybindings
