@@ -72,13 +72,25 @@ git clone git@github.com:ViniZap4/lumi-web.git
 ### Docker Compose (Recommended)
 
 ```bash
-cp .env.example .env
-docker-compose up -d
+cp .env.example .env    # edit LUMI_PASSWORD before starting
+docker compose up -d
 
 # Access:
 # - Web UI: http://localhost:3000
 # - API: http://localhost:8080
 ```
+
+Environment variables (`.env`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LUMI_PASSWORD` | `dev` | Auth token for API and login |
+| `LUMI_PORT` | `8080` | Server host port |
+| `WEB_PORT` | `3000` | Web client host port |
+| `NOTES_PATH` | `./notes` | Notes directory (mounted into server) |
+| `LUMI_SERVER_URL` | `http://localhost:8080` | Server URL as seen by the browser (baked at build) |
+| `LUMI_SERVER_ID` | auto | Unique server ID for peer sync |
+| `LUMI_PEERS` | — | Comma-separated peer URLs |
 
 ### TUI Client
 
@@ -122,7 +134,8 @@ Or with Docker:
 ```bash
 cd server
 docker build -t lumi-server .
-docker run -p 8080:8080 -v $(pwd)/../notes:/notes -e LUMI_PASSWORD=dev lumi-server
+docker run -p 8080:8080 -v $(pwd)/../notes:/notes \
+  -e LUMI_PASSWORD=your-secret lumi-server
 ```
 
 ### Web Client

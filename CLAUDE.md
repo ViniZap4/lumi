@@ -33,8 +33,10 @@ npm run build                       # Production build to dist/
 
 ### Docker Compose (Full Stack)
 ```bash
-cp .env.example .env
-docker-compose up -d                # Web on :3000, API on :8080
+cp .env.example .env                # Set LUMI_PASSWORD, ports, notes path
+docker compose up -d                # Web on :3000, API on :8080
+# VITE_LUMI_SERVER_URL is a build arg (baked at image build, not runtime)
+# Rebuild web after changing: docker compose build web
 ```
 
 ### Testing

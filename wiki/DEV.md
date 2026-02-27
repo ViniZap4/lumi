@@ -199,26 +199,43 @@ go run main.go
 ```bash
 cd server
 go mod init github.com/vinizap/lumi/server
-go run main.go
+LUMI_ROOT=../notes LUMI_PASSWORD=dev go run main.go
 ```
 
 Environment variables:
-- `LUMI_ROOT` - Notes directory (default: `./notes`)
-- `LUMI_PASSWORD` - Auth token (default: `dev`)
-- `LUMI_PORT` - Server port (default: `8080`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LUMI_ROOT` | `./notes` | Notes directory |
+| `LUMI_PASSWORD` | `dev` | Auth token |
+| `LUMI_PORT` | `8080` | Server port |
+| `LUMI_SERVER_ID` | auto | Unique ID for peer sync |
+| `LUMI_PEERS` | — | Comma-separated peer server URLs |
 
 ### Web Client Development
 
 ```bash
 cd web-client
 npm install
-npm run dev
+npm run dev     # uses VITE_LUMI_SERVER_URL from .env or defaults to http://localhost:8080
 ```
 
-Environment variables:
-- `VITE_LUMI_SERVER_URL` - Server URL (default: `http://localhost:8080`)
+Environment variables (build-time, baked by Vite):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_LUMI_SERVER_URL` | `http://localhost:8080` | Server URL as seen by the browser |
 
 The web client prompts for a password on first visit. The token is validated against the server's `POST /api/auth` endpoint and persisted in `localStorage` for session continuity.
+
+### Docker Compose
+
+```bash
+cp .env.example .env    # edit LUMI_PASSWORD
+docker compose up -d    # web on :3000, API on :8080
+```
+
+`VITE_LUMI_SERVER_URL` is passed as a **build arg** to the web client Dockerfile (not a runtime env var). Changing it requires a rebuild (`docker compose build web`).
 
 ## API Design
 

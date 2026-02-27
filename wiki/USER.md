@@ -24,15 +24,36 @@ go build -o lumi
 go run main.go
 ```
 
-### Server (for Web Client)
+### Docker Compose (Recommended)
+
+The easiest way to run the server and web client together:
+
+```bash
+cp .env.example .env            # edit LUMI_PASSWORD before starting
+docker compose up -d
+
+# Web UI: http://localhost:3000
+# API:    http://localhost:8080
+```
+
+`.env` variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LUMI_PASSWORD` | `dev` | Password for login and API access |
+| `LUMI_PORT` | `8080` | Server host port |
+| `WEB_PORT` | `3000` | Web client host port |
+| `NOTES_PATH` | `./notes` | Notes directory |
+| `LUMI_SERVER_URL` | `http://localhost:8080` | Server URL as seen by the browser |
+
+### Server (standalone)
 
 ```bash
 # Using Docker
 docker run -d \
   -p 8080:8080 \
   -v /path/to/your/notes:/notes \
-  -e LUMI_ROOT=/notes \
-  -e LUMI_PASSWORD=your-secret-token \
+  -e LUMI_PASSWORD=your-secret \
   lumi-server
 
 # From source
@@ -40,14 +61,13 @@ cd server
 LUMI_ROOT=/path/to/notes LUMI_PASSWORD=secret go run main.go
 ```
 
-### Web Client
+### Web Client (standalone)
 
 ```bash
-# Using Docker
-docker run -d \
-  -p 3000:80 \
-  -e VITE_LUMI_SERVER_URL=http://localhost:8080 \
-  lumi-web
+# Using Docker (pass server URL at build time)
+docker build --build-arg VITE_LUMI_SERVER_URL=http://your-server:8080 \
+  -t lumi-web ./web-client
+docker run -d -p 3000:80 lumi-web
 
 # From source
 cd web-client
@@ -228,9 +248,13 @@ export LUMI_NOTES_DIR=/path/to/notes
 
 Configure via environment variables:
 
-- `LUMI_ROOT` - Path to notes directory (default: `./notes`)
-- `LUMI_PASSWORD` - Authentication token (default: `dev`)
-- `LUMI_PORT` - Server port (default: `8080`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LUMI_ROOT` | `./notes` | Path to notes directory |
+| `LUMI_PASSWORD` | `dev` | Authentication token |
+| `LUMI_PORT` | `8080` | Server port |
+| `LUMI_SERVER_ID` | auto | Unique server ID for peer sync |
+| `LUMI_PEERS` | — | Comma-separated peer server URLs |
 
 ### Editor
 
