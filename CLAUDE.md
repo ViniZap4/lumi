@@ -110,26 +110,15 @@ tags:
 - **Svelte style**: One component per file, reactive declarations over manual updates
 - **Auth**: All server requests require `X-Lumi-Token` header matching `LUMI_PASSWORD` env var
 
-## Subtree Remotes
+## Submodules
 
-Each component is published as a standalone repo via `git subtree`. The monorepo (`ViniZap4/lumi`) is the primary repo.
+Each component is a separate repo linked as a git submodule:
 
-| Remote | Repo | Prefix |
-|--------|------|--------|
-| `lumi-tui` | `ViniZap4/lumi-tui` | `tui-client/` |
-| `lumi-server` | `ViniZap4/lumi-server` | `server/` |
-| `lumi-web` | `ViniZap4/lumi-web` | `web-client/` |
+| Path | Repo |
+|------|------|
+| `tui-client/` | `ViniZap4/lumi-tui` |
+| `server/` | `ViniZap4/lumi-server` |
+| `web-client/` | `ViniZap4/lumi-web` |
 
-### Push to standalone repos
-```bash
-git subtree push --prefix=tui-client lumi-tui main
-git subtree push --prefix=server lumi-server main
-git subtree push --prefix=web-client lumi-web main
-```
-
-### Pull from standalone repos
-```bash
-git subtree pull --prefix=tui-client lumi-tui main --squash
-git subtree pull --prefix=server lumi-server main --squash
-git subtree pull --prefix=web-client lumi-web main --squash
-```
+Clone with submodules: `git clone --recurse-submodules`.
+Update submodules: `git submodule update --init --recursive`.

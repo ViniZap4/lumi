@@ -4,18 +4,24 @@ A local-first, Markdown-based note-taking system with beautiful TUI and web clie
 
 ## 📦 Repository Structure
 
-This monorepo contains all lumi components. Each component is also available as a standalone repo:
+Each component lives in its own repo, linked here as git submodules:
 
-| Component | Monorepo Path | Standalone Repo |
-|-----------|--------------|-----------------|
+| Component | Path | Repo |
+|-----------|------|------|
 | TUI Client | [`tui-client/`](tui-client/) | [ViniZap4/lumi-tui](https://github.com/ViniZap4/lumi-tui) |
 | Server | [`server/`](server/) | [ViniZap4/lumi-server](https://github.com/ViniZap4/lumi-server) |
 | Web Client | [`web-client/`](web-client/) | [ViniZap4/lumi-web](https://github.com/ViniZap4/lumi-web) |
 
-### Clone the Full Monorepo
+### Clone with All Submodules
 
 ```bash
-git clone git@github.com:ViniZap4/lumi.git
+git clone --recurse-submodules git@github.com:ViniZap4/lumi.git
+```
+
+If you already cloned without `--recurse-submodules`:
+
+```bash
+git submodule update --init --recursive
 ```
 
 ### Clone Individual Components
@@ -24,32 +30,6 @@ git clone git@github.com:ViniZap4/lumi.git
 git clone git@github.com:ViniZap4/lumi-tui.git
 git clone git@github.com:ViniZap4/lumi-server.git
 git clone git@github.com:ViniZap4/lumi-web.git
-```
-
-### Subtree Workflow (Maintainers)
-
-The standalone repos are synced from this monorepo via `git subtree`. To set up the remotes:
-
-```bash
-git remote add lumi-tui git@github.com:ViniZap4/lumi-tui.git
-git remote add lumi-server git@github.com:ViniZap4/lumi-server.git
-git remote add lumi-web git@github.com:ViniZap4/lumi-web.git
-```
-
-Push changes to a standalone repo:
-
-```bash
-git subtree push --prefix=tui-client lumi-tui main
-git subtree push --prefix=server lumi-server main
-git subtree push --prefix=web-client lumi-web main
-```
-
-Pull changes from a standalone repo back into the monorepo:
-
-```bash
-git subtree pull --prefix=tui-client lumi-tui main --squash
-git subtree pull --prefix=server lumi-server main --squash
-git subtree pull --prefix=web-client lumi-web main --squash
 ```
 
 ## ✨ Features
