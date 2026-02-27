@@ -1,5 +1,7 @@
 # lumi
 
+> **🚧 Work in progress** — lumi is under active development. Features may change, break, or be incomplete.
+
 A local-first, Markdown-based note-taking system with beautiful TUI and web clients.
 
 ## 📦 Repository Structure
