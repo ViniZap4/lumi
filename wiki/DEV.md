@@ -54,6 +54,7 @@ lumi is a **local-first note-taking ecosystem** with three main components:
 
 3. **Web Client** (`web-client/`)
    - Svelte 5 UI
+   - Login screen with password auth and localStorage session persistence
    - Connects to server via REST (CRUD) + WebSocket (live updates)
    - Smart conflict avoidance — skips sync updates while user is editing
    - Docker-ready static build
@@ -159,10 +160,17 @@ lumi/
 │   ├── Dockerfile
 │   ├── src/
 │   │   ├── lib/
-│   │   │   ├── api.js      # HTTP client (REST)
-│   │   │   ├── ws.js       # WebSocket client (auto-reconnect)
+│   │   │   ├── api.js      # HTTP client (REST) with dynamic token auth
+│   │   │   ├── ws.js       # WebSocket client (auto-reconnect, token auth)
+│   │   │   ├── store.svelte.js # Reactive store (auth, notes, folders, UI state)
 │   │   │   └── themes.js   # Theme definitions and application
-│   │   └── AppFinal.svelte # Main 3-panel app component
+│   │   ├── views/
+│   │   │   ├── LoginView.svelte  # Login screen (password auth)
+│   │   │   ├── HomeView.svelte   # Home with logo animation
+│   │   │   ├── TreeView.svelte   # File browser
+│   │   │   ├── NoteView.svelte   # Note display/editor
+│   │   │   └── ConfigView.svelte # Settings
+│   │   └── App.svelte      # Root component (auth gate + view routing)
 │   └── vite.config.js
 └── site/                   # Landing page
     ├── package.json
@@ -210,11 +218,14 @@ npm run dev
 Environment variables:
 - `VITE_LUMI_SERVER_URL` - Server URL (default: `http://localhost:8080`)
 
+The web client prompts for a password on first visit. The token is validated against the server's `POST /api/auth` endpoint and persisted in `localStorage` for session continuity.
+
 ## API Design
 
 ### HTTP Endpoints
 
 ```
+POST   /api/auth                 # Validate token (no auth middleware)
 GET    /api/folders              # List all folders
 GET    /api/folders/:path/notes  # List notes in folder
 GET    /api/notes/:id            # Get note by ID
@@ -241,10 +252,9 @@ Server → Client:
 
 ### Authentication
 
-All requests require header:
-```
-X-Lumi-Token: <LUMI_PASSWORD>
-```
+- **REST API**: All requests require header `X-Lumi-Token: <LUMI_PASSWORD>`
+- **WebSocket**: Requires `?token=<LUMI_PASSWORD>` query parameter on `/ws`
+- **Login**: `POST /api/auth` validates the `X-Lumi-Token` header without auth middleware (used by web client login screen)
 
 ## Coding Standards
 

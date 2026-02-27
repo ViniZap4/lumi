@@ -153,21 +153,23 @@ Or regular Markdown links: [Another Note](./another-note.md)
 
 1. Make sure the server is running
 2. Open your browser to `http://localhost:3000` (or your configured URL)
-3. Enter your authentication token (set via `LUMI_PASSWORD`)
+3. Enter your password on the login screen (the value of `LUMI_PASSWORD`)
+4. Your session is saved — refreshing the page stays logged in
 
 ### Features
 
+- **Login screen** - Password-gated access with Lumi branding
 - **Folder tree** on the left
 - **Note list** in the middle
 - **Editor** on the right
-- **Realtime sync** - changes appear instantly across all clients
+- **Realtime sync** - authenticated WebSocket updates appear instantly
 
 ### Keyboard Shortcuts (Web)
 
-- `Ctrl+S` - Save note
-- `Ctrl+N` - New note
-- `Ctrl+F` - Search notes
-- `Esc` - Close dialogs
+- `Enter` - Submit password (login), open note (tree)
+- `j/k` - Navigate up/down
+- `/` - Search notes
+- `Esc` - Go back / close dialogs
 
 ## Settings & Themes
 

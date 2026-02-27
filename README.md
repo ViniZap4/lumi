@@ -54,11 +54,12 @@ git clone git@github.com:ViniZap4/lumi-web.git
   - Split layout: settings on the left, themed note preview on the right
 
 ### Web Client
+- **Login Screen** - Password-gated access with session persistence
 - **Modern Dark Theme** - Clean, professional interface
 - **Folders & Notes** - Browse your note hierarchy
 - **Live Preview** - Rendered markdown with syntax highlighting
 - **Vim Keybindings** - j/k navigation, / for search
-- **Real-time Sync** - WebSocket updates
+- **Real-time Sync** - Authenticated WebSocket updates
 
 ### Server
 - **HTTP API** - RESTful endpoints for notes and folders
@@ -218,18 +219,21 @@ npm run dev
 ### Endpoints
 
 ```
+POST /api/auth             - Validate token (no middleware)
 GET  /api/folders          - List all folders
 GET  /api/notes            - List all notes
 GET  /api/notes/:id        - Get note by ID
 POST /api/notes            - Create note
 PUT  /api/notes/:id        - Update note
 DELETE /api/notes/:id      - Delete note
-WS   /ws                   - WebSocket for updates
+WS   /ws?token=<token>     - WebSocket for updates (token required)
 ```
 
 ### Authentication
 
-Include header: `X-Lumi-Token: <your-token>`
+- **REST**: Include header `X-Lumi-Token: <your-token>` on all requests
+- **WebSocket**: Pass token as `?token=` query parameter
+- **Login**: `POST /api/auth` with `X-Lumi-Token` header to validate credentials
 
 ## 📁 Project Structure
 

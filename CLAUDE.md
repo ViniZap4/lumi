@@ -88,9 +88,11 @@ Each Go component (`server/`, `tui-client/`) follows the same layered structure:
 - Image rendering via `image/render.go` (fallback chain: timg → chafa → viu)
 
 ### Web Client (Svelte 5)
-- `AppFinal.svelte` is the active app component (3-panel layout)
-- `lib/api.js` — HTTP client wrapping fetch
-- `lib/ws.js` — WebSocket client with auto-reconnect
+- `App.svelte` is the root component — gates all views behind authentication
+- `views/LoginView.svelte` — password login screen with session persistence (localStorage)
+- `lib/store.svelte.js` — reactive store with auth state (`authenticated`, `login`, `logout`, `checkAuth`)
+- `lib/api.js` — HTTP client with dynamic token (`setToken`, `getToken`, `login`)
+- `lib/ws.js` — WebSocket client with auto-reconnect and token auth via query param
 
 ## Note Format
 
@@ -112,7 +114,7 @@ tags:
 - **Commit messages**: Conventional commits — `feat:`, `fix:`, `docs:`, `refactor:`
 - **Go style**: `gofmt`/`goimports`, meaningful package names (`domain`, `filesystem`, not `utils`), explicit error handling
 - **Svelte style**: One component per file, reactive declarations over manual updates
-- **Auth**: All server requests require `X-Lumi-Token` header matching `LUMI_PASSWORD` env var
+- **Auth**: REST requests require `X-Lumi-Token` header matching `LUMI_PASSWORD` env var. WebSocket requires `?token=` query param. `POST /api/auth` validates credentials (no middleware). Web client persists token in localStorage.
 
 ## Submodules
 
