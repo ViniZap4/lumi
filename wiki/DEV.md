@@ -5,17 +5,28 @@
 lumi is a **local-first note-taking ecosystem** with three main components:
 
 ```
-┌─────────────┐
-│  TUI Client │ (Go + Bubbletea)
-│  (Terminal) │ ─┐
-└─────────────┘  │
-                 │    ┌──────────┐      ┌─────────────┐
-                 ├───→│  Server  │◄────→│ Filesystem  │
-                 │    │ (Go API) │      │ (Markdown)  │
-┌─────────────┐  │    └──────────┘      └─────────────┘
-│ Web Client  │  │         ▲
-│  (Svelte)   │ ─┘         │
-└─────────────┘      WebSocket (realtime)
+┌─────────────────┐          ┌──────────────┐
+│   TUI Client    │          │  Web Client  │
+│ (Go + Bubbletea)│          │  (Svelte 5)  │
+└────────┬────────┘          └──────┬───────┘
+         │                          │
+         │ direct R/W               │ HTTP + WebSocket
+         │ + optional WS            │
+         │                          │
+         │        ┌─────────────────┘
+         │        │
+         │  ┌─────▼───────────┐     ┌─────────────┐
+         │  │   Go Server     │◄───►│ Peer Servers │
+         │  │  REST + WS Hub  │     │  (optional)  │
+         │  └─────────┬───────┘     └─────────────┘
+         │            │
+         └──────┬─────┘
+                │
+       ┌────────▼──────────┐
+       │    Filesystem     │
+       │  Markdown + YAML  │
+       │   frontmatter     │
+       └───────────────────┘
 ```
 
 ### Source of Truth
@@ -27,6 +38,8 @@ lumi is a **local-first note-taking ecosystem** with three main components:
 1. **TUI Client** (`tui-client/`)
    - Terminal interface using Bubbletea
    - Reads/writes directly to filesystem
+   - Optional WebSocket connection to server for real-time sync (`sync/` package)
+   - Per-folder server config in `<notesDir>/.lumi/config.yaml`
    - Opens notes in $EDITOR (nvim fallback)
    - Vim-like keybindings
    - Theme engine with multiple dark/light themes
@@ -34,13 +47,15 @@ lumi is a **local-first note-taking ecosystem** with three main components:
 
 2. **Server** (`server/`)
    - HTTP API for CRUD operations
-   - WebSocket for realtime sync
+   - WebSocket hub for real-time sync to clients
+   - Peer-to-peer federation — multiple servers sync via `LUMI_PEERS` env var
    - Docker-first deployment
-   - Simple token authentication
+   - Simple token authentication (`X-Lumi-Token` header)
 
 3. **Web Client** (`web-client/`)
-   - Svelte-based UI
-   - Connects to server via HTTP + WebSocket
+   - Svelte 5 UI
+   - Connects to server via REST (CRUD) + WebSocket (live updates)
+   - Smart conflict avoidance — skips sync updates while user is editing
    - Docker-ready static build
 
 ## Tech Stack
@@ -110,12 +125,15 @@ type Note struct {
 lumi/
 ├── wiki/                    # Documentation
 │   ├── DEV.md              # This file
-│   └── USER.md             # User guide
+│   ├── USER.md             # User guide
+│   └── SUBMODULES.md       # Git submodules workflow guide
 ├── tui-client/             # Terminal client
 │   ├── main.go
 │   ├── go.mod
 │   ├── domain/             # Core types (Note, Folder)
 │   ├── filesystem/         # File I/O, frontmatter parsing
+│   ├── config/             # Global config + per-folder config (server URL/token)
+│   ├── sync/               # WebSocket client for real-time server sync
 │   ├── ui/                 # Bubbletea models and views
 │   │   ├── simple.go       # Main model, Update, View routing
 │   │   ├── view_tree.go    # Tree file browser (3-column split)
@@ -124,25 +142,35 @@ lumi/
 │   │   ├── inline.go       # Per-character inline markdown classification
 │   │   └── styles.go       # Lipgloss styles, theme application
 │   ├── theme/              # Theme definitions and registry
-│   └── editor/             # External editor integration
+│   ├── editor/             # External editor integration
+│   └── image/              # Terminal image rendering (timg/chafa/viu)
 ├── server/                 # API server
 │   ├── main.go
 │   ├── go.mod
 │   ├── Dockerfile
 │   ├── domain/             # Shared types
 │   ├── filesystem/         # File operations
-│   ├── http/               # HTTP handlers
-│   ├── ws/                 # WebSocket hub
-│   └── auth/               # Token authentication
-└── web-client/             # Web interface
+│   ├── http/               # HTTP handlers (REST API)
+│   ├── ws/                 # WebSocket hub (broadcast to clients + peers)
+│   ├── auth/               # Token authentication middleware
+│   └── peer/               # Peer-to-peer server federation
+├── web-client/             # Web interface
+│   ├── package.json
+│   ├── Dockerfile
+│   ├── src/
+│   │   ├── lib/
+│   │   │   ├── api.js      # HTTP client (REST)
+│   │   │   ├── ws.js       # WebSocket client (auto-reconnect)
+│   │   │   └── themes.js   # Theme definitions and application
+│   │   └── AppFinal.svelte # Main 3-panel app component
+│   └── vite.config.js
+└── site/                   # Landing page
     ├── package.json
-    ├── Dockerfile
-    ├── src/
-    │   ├── lib/
-    │   │   ├── api.js      # HTTP client
-    │   │   └── ws.js       # WebSocket client
-    │   └── components/
-    └── vite.config.js
+    └── src/
+        ├── App.svelte      # Landing page component
+        └── lib/
+            ├── themes.js   # Theme picker data
+            └── ThemePicker.svelte
 ```
 
 ## Development Workflow

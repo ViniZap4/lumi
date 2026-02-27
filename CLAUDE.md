@@ -46,35 +46,39 @@ No automated test suites exist. TUI is tested manually. Server and filesystem pa
 ┌─────────────────┐          ┌──────────────┐
 │   TUI Client    │          │  Web Client  │
 │ (Go + Bubbletea)│          │  (Svelte 5)  │
-│ direct FS R/W   │          │  HTTP + WS   │
 └────────┬────────┘          └──────┬───────┘
          │                          │
-         │ filesystem               │ HTTP/WebSocket
+         │ direct R/W               │ HTTP + WebSocket
+         │ + optional WS            │
          │                          │
-         │                  ┌───────▼─────────┐
-         │                  │   Go Server      │
-         │                  │  REST + WS Hub   │
-         │                  └────────┬─────────┘
-         │                           │
-         └───────────┬───────────────┘
-                     │
-            ┌────────▼──────────┐
-            │   Filesystem      │
-            │ Markdown + YAML   │
-            │   frontmatter     │
-            └───────────────────┘
+         │        ┌─────────────────┘
+         │        │
+         │  ┌─────▼───────────┐     ┌─────────────┐
+         │  │   Go Server     │◄───►│ Peer Servers │
+         │  │  REST + WS Hub  │     │  (optional)  │
+         │  └─────────┬───────┘     └─────────────┘
+         │            │
+         └──────┬─────┘
+                │
+       ┌────────▼──────────┐
+       │    Filesystem     │
+       │  Markdown + YAML  │
+       │   frontmatter     │
+       └───────────────────┘
 ```
 
-- **TUI client reads/writes the filesystem directly** — it does not go through the server.
-- **Web client connects to the server** which provides REST endpoints and a WebSocket hub for real-time sync.
-- Both components share the same `domain/` package pattern (Note, Folder structs) and `filesystem/` package for YAML frontmatter parsing.
+- **TUI client reads/writes the filesystem directly** and can optionally connect to the server via WebSocket (`sync/` package) for real-time sync notifications. Configured per-folder in `<notesDir>/.lumi/config.yaml` with `server_url` and `server_token`.
+- **Web client connects to the server** via REST for CRUD and WebSocket for real-time updates.
+- **Server supports peer-to-peer sync** (`peer/` package) — multiple server instances can federate via `LUMI_PEERS` env var. Peers exchange events over WebSocket with origin tracking to prevent echo loops.
+- Both Go components share the same `domain/` package pattern (Note, Folder structs) and `filesystem/` package for YAML frontmatter parsing.
 
 ### Component Layout
 
 Each Go component (`server/`, `tui-client/`) follows the same layered structure:
 - `domain/` — Core types: `Note` (ID, Title, CreatedAt, UpdatedAt, Tags, Path, Content), `Folder`
 - `filesystem/` — Markdown file I/O, YAML frontmatter parsing (`parser.go`), CRUD operations
-- Component-specific: `ui/` (TUI views), `http/` + `ws/` + `auth/` (server)
+- TUI-specific: `ui/` (Bubbletea views), `sync/` (WebSocket client), `config/` (global + per-folder config)
+- Server-specific: `http/` (REST handlers), `ws/` (WebSocket hub), `auth/` (token middleware), `peer/` (server federation)
 
 ### TUI Client (Bubbletea / Elm Architecture)
 - Main model and logic in `ui/simple.go`, styles in `ui/styles.go`

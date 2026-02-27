@@ -235,12 +235,44 @@ Include header: `X-Lumi-Token: <your-token>`
 
 ```
 lumi/
-├── tui-client/     # Go TUI with Bubbletea
-├── server/         # Go HTTP + WebSocket server
-├── web-client/     # Svelte web app
+├── tui-client/     # Go TUI — direct FS + optional server sync
+├── server/         # Go HTTP + WebSocket server + peer federation
+├── web-client/     # Svelte 5 web app
+├── site/           # Landing page (Svelte 5 + Tailwind)
 ├── wiki/           # Documentation
 └── notes/          # Your notes (markdown files)
 ```
+
+### Architecture
+
+```
+┌─────────────────┐          ┌──────────────┐
+│   TUI Client    │          │  Web Client  │
+│ (Go + Bubbletea)│          │  (Svelte 5)  │
+└────────┬────────┘          └──────┬───────┘
+         │                          │
+         │ direct R/W               │ HTTP + WebSocket
+         │ + optional WS            │
+         │                          │
+         │        ┌─────────────────┘
+         │        │
+         │  ┌─────▼───────────┐     ┌─────────────┐
+         │  │   Go Server     │◄───►│ Peer Servers │
+         │  │  REST + WS Hub  │     │  (optional)  │
+         │  └─────────┬───────┘     └─────────────┘
+         │            │
+         └──────┬─────┘
+                │
+       ┌────────▼──────────┐
+       │    Filesystem     │
+       │  Markdown + YAML  │
+       │   frontmatter     │
+       └───────────────────┘
+```
+
+- **TUI** reads/writes files directly and can optionally sync with the server via WebSocket
+- **Web client** uses REST for CRUD and WebSocket for live updates
+- **Servers** can peer with each other for multi-instance federation
 
 ## 🎨 Note Format
 
