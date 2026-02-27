@@ -1,12 +1,12 @@
 [submodule "tui-client"]
 	path = tui-client
-	url = git@github.com:ViniZap4/lumi-tui.git
+	url = https://github.com/ViniZap4/lumi-tui.git
 [submodule "server"]
 	path = server
-	url = git@github.com:ViniZap4/lumi-server.git
+	url = https://github.com/ViniZap4/lumi-server.git
 [submodule "web-client"]
 	path = web-client
-	url = git@github.com:ViniZap4/lumi-web.git
+	url = https://github.com/ViniZap4/lumi-web.git
 [submodule "site"]
 	path = site
-	url = git@github.com:ViniZap4/lumi-site.git
+	url = https://github.com/ViniZap4/lumi-site.git
