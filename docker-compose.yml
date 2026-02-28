@@ -17,7 +17,7 @@ services:
     build:
       context: ./web-client
       args:
-        VITE_LUMI_SERVER_URL: ${LUMI_SERVER_URL:-http://localhost:${LUMI_PORT:-8080}}
+        VITE_LUMI_SERVER_URL: ${LUMI_SERVER_URL:-http://localhost:8080}
     ports:
       - "${WEB_PORT:-3000}:80"
     depends_on:
