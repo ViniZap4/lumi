@@ -2,7 +2,7 @@
 
 A local-first, Markdown-based note-taking system with beautiful TUI and web clients.
 
-> **Documentation**: [vinizap4.github.io/lumi-site/#/docs](https://vinizap4.github.io/lumi-site/#/docs)
+> **Documentation**: [lumi-note.vercel.app/#/docs](https://lumi-note.vercel.app/#/docs)
 
 ## Repository Structure
 
