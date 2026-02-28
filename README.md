@@ -8,11 +8,11 @@ A local-first, Markdown-based note-taking system with beautiful TUI and web clie
 
 Each component lives in its own repo, linked here as git submodules:
 
-| Component | Path | Repo |
-|-----------|------|------|
-| TUI Client | [`tui-client/`](tui-client/) | [ViniZap4/lumi-tui](https://github.com/ViniZap4/lumi-tui) |
-| Server | [`server/`](server/) | [ViniZap4/lumi-server](https://github.com/ViniZap4/lumi-server) |
-| Web Client | [`web-client/`](web-client/) | [ViniZap4/lumi-web](https://github.com/ViniZap4/lumi-web) |
+| Component | Repo |
+|-----------|------|
+| TUI Client | [ViniZap4/lumi-tui](https://github.com/ViniZap4/lumi-tui) |
+| Server | [ViniZap4/lumi-server](https://github.com/ViniZap4/lumi-server) |
+| Web Client | [ViniZap4/lumi-web](https://github.com/ViniZap4/lumi-web) |
 
 ### Clone with All Submodules
 
@@ -84,13 +84,13 @@ Environment variables (`.env`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LUMI_PASSWORD` | `dev` | Auth token for API and login |
-| `LUMI_PORT` | `8080` | Server host port |
-| `WEB_PORT` | `3000` | Web client host port |
-| `NOTES_PATH` | `./notes` | Notes directory (mounted into server) |
-| `LUMI_SERVER_URL` | `http://localhost:8080` | Server URL as seen by the browser (baked at build) |
-| `LUMI_SERVER_ID` | auto | Unique server ID for peer sync |
-| `LUMI_PEERS` | — | Comma-separated peer URLs |
+| `LUMI_PASSWORD` | `dev` | Password for web login, REST API (`X-Lumi-Token`), and WebSocket (`?token=`) |
+| `LUMI_PORT` | `8080` | Host port mapped to the server container |
+| `WEB_PORT` | `3000` | Host port mapped to the web client container |
+| `NOTES_PATH` | `./notes` | Host path to the notes directory (mounted into server) |
+| `LUMI_SERVER_URL` | `http://localhost:8080` | URL the browser uses to reach the API. Baked at build time — changing requires `docker compose build web` |
+| `LUMI_SERVER_ID` | auto | Unique server ID for peer-to-peer sync origin tracking |
+| `LUMI_PEERS` | — | Comma-separated URLs of peer lumi servers to federate with |
 
 ### TUI Client
 
