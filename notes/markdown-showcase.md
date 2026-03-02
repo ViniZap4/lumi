@@ -47,13 +47,13 @@ Press `s` on a wikilink to open in horizontal split, `S` for vertical.
 
 ## Tables
 
-| Feature       | Status    | Notes              |
-| ------------- | :-------: | -----------------: |
-| Bold/Italic   | Done      | Asterisk + underscore |
-| Tables        | Done      | Aligned columns    |
-| Checkboxes    | Done      | Toggle with enter  |
-| Links         | Done      | Follow + split     |
-| Code blocks   | Done      | Language highlight  |
+| Feature       |  Status   |                 Notes |
+| ------------- | :-------: | --------------------: |
+| Bold/Italic   |   Done    | Asterisk + underscore |
+| Tables        |   Done    |       Aligned columns |
+| Checkboxes    |   Done    |     Toggle with enter |
+| Links         |   Done    |        Follow + split |
+| Code blocks   |   Done    |    Language highlight |
 
 ## Lists
 
@@ -67,6 +67,6 @@ Press `s` on a wikilink to open in horizontal split, `S` for vertical.
 
 > This is a blockquote for reference text.
 
----
+--[Markdown Rendering Showcase](markdown-showcase.md)-
 
 See also: [[todo-example]]

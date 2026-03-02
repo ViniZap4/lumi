@@ -1,0 +1,4 @@
+# Lumi Folder Config
+# Server connection (for TUI real-time sync)
+server_url: http://localhost:8080
+server_token: dev
