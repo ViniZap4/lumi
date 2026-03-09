@@ -83,18 +83,22 @@ Each Go component (`server/`, `tui-client/`) follows the same layered structure:
 - Server-specific: `http/` (REST handlers), `ws/` (WebSocket hub), `auth/` (token middleware), `peer/` (server federation)
 
 ### TUI Client (Bubbletea / Elm Architecture)
-- Main model and logic in `ui/simple.go`, styles in `ui/styles.go`
-- Views: Home (search), Tree (file browser), FullNote (note display with split view)
-- Modes: Input modal, Search modal, Tree modal
+- Main model in `ui/model.go`, update logic in `ui/update.go`, view dispatch in `ui/view.go`
+- Views: Home (`view_home.go`), Tree (`view_tree.go`), FullNote (`view_note.go`), Config (`view_config.go`)
+- Keybindings split per view: `keys_home.go`, `keys_tree.go`, `keys_note.go`, `keys_config.go`, `keys_input.go`
 - External editor integration via `editor/editor.go` (uses `$EDITOR`, falls back to nvim)
-- Image rendering via `image/render.go` (fallback chain: timg → chafa → viu)
+- Media rendering via `image/render.go`: images (Kitty > iTerm2 > timg > chafa > viu), video thumbnails (ffmpeg), PDF/embed placeholders
+- Theme system via `theme/` package: 12 built-in themes, custom theme loading, live preview in config view
 
 ### Web Client (Svelte 5)
 - `App.svelte` is the root component — gates all views behind authentication
 - `views/LoginView.svelte` — password login screen with session persistence (localStorage)
-- `lib/store.svelte.js` — reactive store with auth state (`authenticated`, `login`, `logout`, `checkAuth`)
-- `lib/api.js` — HTTP client with dynamic token (`setToken`, `getToken`, `login`)
-- `lib/ws.js` — WebSocket client with auto-reconnect and token auth via query param
+- `lib/store.svelte.ts` — reactive store (Svelte 5 runes: `$state`, `$derived`, `$effect`) with auth, notes, theme, editor state
+- `lib/api.ts` — HTTP client with dynamic token (`setToken`, `getToken`, `login`)
+- `lib/ws.ts` — WebSocket client with auto-reconnect and token auth via query param
+- `lib/markdown.ts` — Markdown rendering with media embeds (video, PDF, YouTube, Vimeo)
+- `lib/editor.ts` — CodeMirror 6 initialization with vim mode
+- `lib/themes.ts` — 12 shared themes matching TUI and site
 
 ## Note Format
 
