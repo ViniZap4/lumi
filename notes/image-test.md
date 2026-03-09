@@ -3,12 +3,12 @@ id: image-test
 title: Image Test Note
 tags: [test, images]
 created_at: 2026-02-17T13:13:00Z
-updated_at: 2026-02-17T13:13:00Z
+updated_at: 2026-03-06T10:00:00Z
 ---
 
 # Image Test Note
 
-This note demonstrates image rendering in the TUI.
+This note demonstrates image rendering in lumi.
 
 ## Test Image 1
 
@@ -28,15 +28,16 @@ A green screenshot placeholder.
 
 Red diagram placeholder.
 
-## Relative Paths
+## Second Screenshot
 
-Images use relative paths from the note location. The TUI will resolve them automatically.
+![Screenshot 2](images/screenshot2.png)
 
 ## Features
 
 - Kitty graphics protocol support
-- Inline image rendering
-- Fallback for missing images
-- Works with standard markdown syntax
+- iTerm2 inline image protocol
+- External tools: timg, chafa, viu
+- tmux passthrough support
+- Responsive sizing with max width/height caps
 
-Link to [[getting-started]] for more examples.
+See also: [[media-showcase]] for video, PDF, and embed examples.
