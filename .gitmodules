@@ -10,3 +10,6 @@
 [submodule "site"]
 	path = site
 	url = https://github.com/ViniZap4/lumi-site.git
+[submodule "apple-client"]
+	path = apple-client
+	url = https://github.com/ViniZap4/lumi-apple.git
