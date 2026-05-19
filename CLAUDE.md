@@ -131,6 +131,7 @@ Each component is a separate repo linked as a git submodule:
 | `tui-client/` | `ViniZap4/lumi-tui` |
 | `server/` | `ViniZap4/lumi-server` |
 | `web-client/` | `ViniZap4/lumi-web` |
+| `apple-client/` | `ViniZap4/lumi-apple` |
 | `site/` | `ViniZap4/lumi-site` |
 
 Clone with submodules: `git clone --recurse-submodules`.

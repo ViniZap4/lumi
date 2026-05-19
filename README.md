@@ -50,6 +50,7 @@ Each component lives in its own repo, linked here as git submodules:
 | TUI Client | `tui-client/` | [ViniZap4/lumi-tui](https://github.com/ViniZap4/lumi-tui) | Go 1.23+, Bubbletea, Lipgloss |
 | Server | `server/` | [ViniZap4/lumi-server](https://github.com/ViniZap4/lumi-server) | Go 1.21+, Gorilla WebSocket |
 | Web Client | `web-client/` | [ViniZap4/lumi-web](https://github.com/ViniZap4/lumi-web) | Svelte 5, Vite 7, CodeMirror 6 |
+| Apple Client | `apple-client/` | [ViniZap4/lumi-apple](https://github.com/ViniZap4/lumi-apple) | SwiftUI, iOS / iPadOS / macOS / visionOS |
 | Site | `site/` | [ViniZap4/lumi-site](https://github.com/ViniZap4/lumi-site) | Svelte 5, Vite 7, Tailwind 4 |
 
 ### Clone
