@@ -205,12 +205,14 @@ Plain markdown files (no frontmatter) are accepted by both Go clients; on-disk f
 
 Each component is a separate repo linked as a git submodule:
 
-| Path | Repo | Branch |
-|------|------|--------|
-| `server/` | `ViniZap4/lumi-server` | `v2` |
-| `web-client/` | `ViniZap4/lumi-web` | `v2` |
-| `tui-client/` | `ViniZap4/lumi-tui` | `main` |
-| `apple-client/` | `ViniZap4/lumi-apple` | `main` |
-| `site/` | `ViniZap4/lumi-site` | `main` |
+| Path | Repo |
+|------|------|
+| `server/` | `ViniZap4/lumi-server` |
+| `web-client/` | `ViniZap4/lumi-web` |
+| `tui-client/` | `ViniZap4/lumi-tui` |
+| `apple-client/` | `ViniZap4/lumi-apple` |
+| `site/` | `ViniZap4/lumi-site` |
+
+All components track `main` as of the v2 cutover (2026-05-28).
 
 Clone with submodules: `git clone --recurse-submodules`. The server has its own nested submodule (`third_party/y-crdt`) required for cgo; the `--recursive` flag covers it.
