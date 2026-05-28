@@ -1,16 +1,64 @@
+# lumi v2 — full stack: Postgres + multi-tenant server + web client.
+#
+# Before first run:
+#   cp .env.example .env             # set LUMI_ADMIN_*, POSTGRES_PASSWORD, etc.
+#   git submodule update --init --recursive
+#   docker compose up -d
+#
+# Web UI: http://localhost:${WEB_PORT:-3000}
+# API:    http://localhost:${LUMI_PORT:-8080}
+#
+# The server image links libyrs.a (yrs/y-crdt) statically via cgo. The
+# y-crdt submodule lives under server/third_party/y-crdt and must be
+# initialised before `docker compose build server` runs.
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lumi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lumi}
+      POSTGRES_DB: ${POSTGRES_DB:-lumi}
+    volumes:
+      - lumi-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lumi} -d ${POSTGRES_DB:-lumi}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   server:
     build: ./server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      LUMI_DATABASE_URL: postgres://${POSTGRES_USER:-lumi}:${POSTGRES_PASSWORD:-lumi}@postgres:5432/${POSTGRES_DB:-lumi}?sslmode=disable
+      LUMI_ROOT: /vaults
+      LUMI_PORT: 8080
+      LUMI_BIND_ADDR: 0.0.0.0
+      LUMI_REQUIRE_TLS: ${LUMI_REQUIRE_TLS:-false}
+      LUMI_ALLOWED_ORIGINS: ${LUMI_ALLOWED_ORIGINS:-http://localhost:3000}
+      LUMI_REGISTRATION: ${LUMI_REGISTRATION:-invite-only}
+      LUMI_AUDIT_RETENTION_DAYS: ${LUMI_AUDIT_RETENTION_DAYS:-90}
+      LUMI_AUTO_MIGRATE: ${LUMI_AUTO_MIGRATE:-true}
+      LUMI_ADMIN_USERNAME: ${LUMI_ADMIN_USERNAME:-}
+      LUMI_ADMIN_PASSWORD: ${LUMI_ADMIN_PASSWORD:-}
+      LUMI_PUBLIC_BASE_URL: ${LUMI_PUBLIC_BASE_URL:-}
+      LUMI_TOS_VERSION: ${LUMI_TOS_VERSION:-}
+      LUMI_PRIVACY_VERSION: ${LUMI_PRIVACY_VERSION:-}
+      LUMI_LOG_FORMAT: ${LUMI_LOG_FORMAT:-json}
+      LUMI_LOG_LEVEL: ${LUMI_LOG_LEVEL:-info}
+    volumes:
+      - "${VAULTS_PATH:-./vaults}:/vaults"
     ports:
       - "${LUMI_PORT:-8080}:8080"
-    volumes:
-      - "${NOTES_PATH:-./notes}:/notes"
-    environment:
-      - LUMI_ROOT=/notes
-      - LUMI_PASSWORD=${LUMI_PASSWORD:-dev}
-      - LUMI_PORT=8080
-      - LUMI_SERVER_ID=${LUMI_SERVER_ID:-}
-      - LUMI_PEERS=${LUMI_PEERS:-}
+    healthcheck:
+      test: ["CMD", "/lumi-server", "version"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   web:
@@ -18,8 +66,11 @@ services:
       context: ./web-client
       args:
         VITE_LUMI_SERVER_URL: ${LUMI_SERVER_URL:-http://localhost:8080}
-    ports:
-      - "${WEB_PORT:-3000}:80"
     depends_on:
       - server
+    ports:
+      - "${WEB_PORT:-3000}:80"
     restart: unless-stopped
+
+volumes:
+  lumi-pg:
