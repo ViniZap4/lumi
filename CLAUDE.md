@@ -29,7 +29,7 @@ make migrate                                # apply migrations
 make run                                    # http://localhost:8080
 # Tests
 make test                                   # unit
-make test-integration                       # testcontainers-go Postgres
+make test-integration                       # testcontainers-go Postgres (target only — no integration-tagged suites yet)
 make smoke                                  # docker compose smoke
 # Subcommands
 go run ./cmd/lumi-server migrate up|down N|status
@@ -142,10 +142,9 @@ Layout (`server/`):
 - `src/lib/vaultmembers.svelte.ts` — member/role admin
 - `src/lib/capabilities.ts` — capability matching
 - `src/lib/notes.svelte.ts` — note CRUD
-- `src/lib/editor-session.svelte.ts` — lazy-loaded Yjs + CodeMirror editor + vim
+- `src/lib/editor-session.svelte.ts` — lazy-loaded Yjs + CodeMirror editor + vim; owns the y-websocket provider and awareness/presence (there is no separate `ws.ts`)
 - `src/lib/uistate.svelte.ts` — UI state ($state runes)
 - `src/lib/api.ts` — REST client (auth-aware)
-- `src/lib/ws.ts` — Yjs WebSocket sync (awareness/presence)
 - `src/lib/markdown.ts` — markdown renderer (DOMPurify-sanitised)
 - `src/views/{LoginView,VaultsView,VaultHomeView}.svelte` — entry views
 
@@ -173,7 +172,7 @@ CSP enforced via meta tag + nginx headers; suites under `*.test.ts` run via vite
 ### Site (Svelte 5 + Tailwind 4)
 
 - SPA with path routing, 12 doc pages, 12-theme catalog, Vercel deploy
-- Note: site is still on v1 docs as of 2026-05-28; a v2 docs rewrite is pending
+- Doc pages and landing copy describe v2 (vaults / CRDT / multi-tenant)
 
 ## Note Format
 
@@ -198,7 +197,7 @@ Plain markdown files (no frontmatter) are accepted by both Go clients; on-disk f
 - **Go style**: `gofmt`/`goimports`, meaningful package names (`auth`, `crdt`, `wsync`, not `utils`), explicit error handling, `domain.ErrValidation` for input errors.
 - **Svelte style**: Svelte 5 runes (`$state`, `$derived`, `$effect`); one component per file; lazy-load heavy chunks (Yjs, CodeMirror) on first edit.
 - **Auth**: session token via `X-Lumi-Token` (REST) or `?token=` (WS). Per-vault capabilities checked at every handler.
-- **Tests**: server has unit + integration (testcontainers-go) + smoke; web client has vitest suites. v1's "no automated tests" rule is superseded for security-critical and CRDT paths.
+- **Tests**: server has unit tests + a docker-compose smoke script (the `make test-integration` testcontainers-go target exists, but no integration-tagged suites have landed yet); web client has vitest suites; TUI and Apple clients have their own unit suites. v1's "no automated tests" rule is superseded for security-critical and CRDT paths.
 - **Pillars** (applied to every decision): Security/LGPD → performance → DX → scale → UX → UI → QA.
 
 ## Submodules
