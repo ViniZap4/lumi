@@ -101,6 +101,17 @@ The home server is authoritative for the **control plane** of a vault: users, me
 
 ## Data model deltas
 
+> **Implementation deviation (F3, 2026-07-03):** the `federation_events`
+> incremental log below was replaced by ONE signed full control-state
+> document per vault (`federation_control_state` on home,
+> `replicated_control_state` on followers), versioned by `seq` and pushed
+> whole on every change. Full-state replication is idempotent and immune to
+> event-ordering/replay bugs at vault-membership scale; change history stays
+> in `audit_log`. Cross-server members live in `federated_vault_members`
+> (member_key = `username@server-url`) because `vault_members.user_id`
+> FK-references local users. Follower replication lag is tracked as
+> `vault_federations.last_acked_seq`.
+
 ```sql
 CREATE TABLE server_keys (           -- exactly one row
   public_key   BYTEA NOT NULL,
