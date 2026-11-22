@@ -1,0 +1,246 @@
+# Deploy de produção do lumi no servidor de casa (ZimaOS), pelo Gitea Actions.
+# Ver deploy/README.md. Espelha o desenho do porvia (ADR 0048): imagens
+# construídas no próprio servidor, nome de projeto fixo, cada serviço público
+# atrás de um contêiner acompanhante do Tailscale (HTTPS 443 na tailnet).
+#
+# Nada aqui publica porta no host: a única entrada é a tailnet.
+#   https://lumi.<tailnet>.ts.net      -> web (nginx)
+#   https://lumi-api.<tailnet>.ts.net  -> lumi-server (REST + WebSocket)
+#
+# Uso manual, a partir da raiz do guarda-chuva (o workflow faz o mesmo):
+#   export TAILNET_DOMAIN=... LUMI_DB_PASSWORD=... TS_OAUTH_SECRET=...
+#   docker compose -f deploy/compose.prod.yaml build
+#   docker compose -f deploy/compose.prod.yaml up -d
+#
+# Os caminhos relativos partem de deploy/.
+
+# Nome fixo: os volumes (banco, vaults, estado do Tailscale, backups)
+# atravessam os deploys. "lumi-prod" e não "lumi" para não colidir com o
+# projeto padrão do docker-compose.yml de desenvolvimento (nome do diretório).
+name: lumi-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-tailscale-env: &tailscale-env
+  # Segredo de um cliente OAuth do Tailscale (escopo auth_keys, tag:lumi) no
+  # lugar de uma auth key que vence: re-registra o nó se o volume se perder.
+  TS_AUTHKEY: ${TS_OAUTH_SECRET:?defina TS_OAUTH_SECRET}?ephemeral=false
+  TS_EXTRA_ARGS: --advertise-tags=tag:lumi
+  TS_STATE_DIR: /var/lib/tailscale
+  TS_SERVE_CONFIG: /config/serve.json
+  TS_AUTH_ONCE: "true"
+  TS_USERSPACE: "true"
+  TS_ENABLE_HEALTH_CHECK: "true"
+  TS_LOCAL_ADDR_PORT: 127.0.0.1:9002
+
+x-tailscale-health: &tailscale-health
+  test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:9002/healthz"]
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+services:
+  # ---------------------------------------------------------------- banco ---
+  # Sem "ports": alcançável só pela rede interna do compose.
+  postgres:
+    image: postgres:16.16-alpine3.24
+    environment:
+      POSTGRES_USER: lumi
+      POSTGRES_DB: lumi
+      POSTGRES_PASSWORD: ${LUMI_DB_PASSWORD:?defina LUMI_DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /var/run/postgresql
+      - /tmp
+    read_only: true
+    cap_drop: [ALL]
+    # O entrypoint troca de root para o usuário postgres: precisa destas.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+    shm_size: 128mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lumi -d lumi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *logging
+    restart: unless-stopped
+
+  # Backup sob demanda (o workflow roda antes de cada deploy):
+  #   docker compose -f deploy/compose.prod.yaml run --rm backup
+  # Dump do banco + tar das vaults (os .md são a fonte da verdade), mantendo
+  # os 7 mais recentes de cada.
+  backup:
+    image: postgres:16.16-alpine3.24
+    profiles: [ops]
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        ts=$$(date +%Y%m%d-%H%M%S)
+        pg_dump -h postgres -U lumi -d lumi -Fc -f "/backups/db-$$ts.dump"
+        tar -C /vaults -czf "/backups/vaults-$$ts.tar.gz" .
+        ls -1t /backups/db-*.dump | tail -n +8 | xargs -r rm -f
+        ls -1t /backups/vaults-*.tar.gz | tail -n +8 | xargs -r rm -f
+        ls -1t /backups | head -4
+    environment:
+      PGPASSWORD: ${LUMI_DB_PASSWORD:?defina LUMI_DB_PASSWORD}
+    volumes:
+      - backups:/backups
+      - vaults:/vaults:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    restart: "no"
+
+  # ------------------------------------------------------------- migração ---
+  # One-shot com o CLI do golang-migrate na mesma versão da lib usada pelo
+  # servidor (v4.19.1, mesma tabela schema_migrations). A imagem atual do
+  # servidor não leva o diretório migrations/, então LUMI_AUTO_MIGRATE não
+  # funcionaria dentro dela (ver scratchpad: patch proposto ao lumi-server).
+  migrate:
+    build:
+      context: ../server/migrations
+      dockerfile_inline: |
+        FROM migrate/migrate:v4.19.1
+        COPY . /migrations
+    image: lumi-migrate:local
+    entrypoint: ["/bin/sh", "-ec"]
+    # A URL (com a senha) fica só no ambiente, nunca na linha de comando.
+    command: ['exec migrate -path /migrations -database "$$LUMI_DATABASE_URL" up']
+    environment:
+      LUMI_DATABASE_URL: postgres://lumi:${LUMI_DB_PASSWORD:?defina LUMI_DB_PASSWORD}@postgres:5432/lumi?sslmode=disable
+    depends_on:
+      postgres: {condition: service_healthy}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    restart: "no"
+
+  # O servidor roda como nonroot (65532) e o volume nasce de root: ajusta o dono
+  # da raiz das vaults antes de o servidor subir. Idempotente, não recursivo.
+  vaults-init:
+    image: alpine:3.24.4
+    command: ["sh", "-ec", "chown 65532:65532 /vaults && chmod 700 /vaults"]
+    volumes:
+      - vaults:/vaults
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    restart: "no"
+
+  # ------------------------------------------------------------------ API ---
+  # Nó lumi-api.<tailnet>.ts.net: HTTPS 443 -> 127.0.0.1:8080 (o servidor).
+  ts-api:
+    build:
+      context: ./tailscale
+      args: {SERVE: api}
+    image: lumi-ts-api:local
+    hostname: lumi-api
+    environment: *tailscale-env
+    volumes:
+      - ts-api-state:/var/lib/tailscale
+    healthcheck: *tailscale-health
+    logging: *logging
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ../server
+    image: lumi-server:local
+    # Compartilha a pilha de rede do acompanhante: o servidor escuta só em
+    # 127.0.0.1, e quem chega nele é o Serve do Tailscale (TLS terminado lá).
+    # Por isso LUMI_REQUIRE_TLS pode ficar ligado (bind loopback é permitido).
+    network_mode: service:ts-api
+    environment:
+      LUMI_DATABASE_URL: postgres://lumi:${LUMI_DB_PASSWORD:?defina LUMI_DB_PASSWORD}@postgres:5432/lumi?sslmode=disable
+      LUMI_ROOT: /vaults
+      LUMI_PORT: "8080"
+      LUMI_BIND_ADDR: 127.0.0.1
+      LUMI_REQUIRE_TLS: "true"
+      LUMI_AUTO_MIGRATE: "false"
+      LUMI_ALLOWED_ORIGINS: https://lumi.${TAILNET_DOMAIN:?defina TAILNET_DOMAIN}
+      # Identidade de federação + base dos links de convite. Padrão: a própria API.
+      LUMI_PUBLIC_BASE_URL: ${LUMI_PUBLIC_BASE_URL:-https://lumi-api.${TAILNET_DOMAIN}}
+      LUMI_REGISTRATION: ${LUMI_REGISTRATION:-invite-only}
+      LUMI_AUDIT_RETENTION_DAYS: ${LUMI_AUDIT_RETENTION_DAYS:-90}
+      LUMI_ADMIN_USERNAME: ${LUMI_ADMIN_USERNAME:-}
+      LUMI_ADMIN_PASSWORD: ${LUMI_ADMIN_PASSWORD:-}
+      LUMI_TOS_VERSION: ${LUMI_TOS_VERSION:-}
+      LUMI_PRIVACY_VERSION: ${LUMI_PRIVACY_VERSION:-}
+      LUMI_LOG_FORMAT: json
+      LUMI_LOG_LEVEL: ${LUMI_LOG_LEVEL:-info}
+    volumes:
+      - vaults:/vaults
+    tmpfs:
+      - /tmp
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      ts-api: {condition: service_started}
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+      vaults-init: {condition: service_completed_successfully}
+    # A imagem é distroless (sem shell/wget): a prontidão HTTP (/readyz) é
+    # verificada pelo workflow através do acompanhante, que divide a rede.
+    healthcheck:
+      test: ["CMD", "/lumi-server", "version"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    logging: *logging
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------ web ---
+  # Nó lumi.<tailnet>.ts.net: HTTPS 443 -> 127.0.0.1:80 (nginx).
+  ts-web:
+    build:
+      context: ./tailscale
+      args: {SERVE: web}
+    image: lumi-ts-web:local
+    hostname: lumi
+    environment: *tailscale-env
+    volumes:
+      - ts-web-state:/var/lib/tailscale
+    healthcheck: *tailscale-health
+    logging: *logging
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../web-client
+      args:
+        # Embutido no bundle no build: a web chama a API pelo nome HTTPS da
+        # tailnet (e wss:// para o WebSocket, derivado deste valor).
+        VITE_LUMI_SERVER_URL: https://lumi-api.${TAILNET_DOMAIN:?defina TAILNET_DOMAIN}
+    image: lumi-web:local
+    network_mode: service:ts-web
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      ts-web: {condition: service_started}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  vaults:
+  backups:
+  ts-api-state:
+  ts-web-state:
