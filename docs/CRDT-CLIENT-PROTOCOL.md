@@ -1,7 +1,9 @@
 # CRDT client protocol (lumi, wave 1)
 
-Status: normative for the web, Apple and TUI clients. The server sections are
-**requirements** (§10); they are not implemented yet.
+Status: normative for the web, Apple and TUI clients. The server requirements
+in §10 were **implemented in waves 1b and 3** (deployed 2026-11-22); see the
+status table at the top of §10. Passages below that say "today"/"proposed"
+describe the pre-wave-1b server and are kept for history.
 Source of truth read for this spec: `server/internal/crdt/{crdt.go,registry.go}`,
 `server/internal/wsync/{handler.go,hub.go,protocol.go}`,
 `server/internal/notes/notes.go` (GetSnapshot / ApplyDiff / ApplyUpdate /
@@ -199,7 +201,7 @@ lastServerSV)), origin}`. After a 2xx it sets `lastServerSV` to the returned
   - `4404`: note deleted.
   - `1008`: policy, the per-user concurrent-socket cap (10).
 
-  Codes 4401, 4403 and 4404 are proposed (§10 S6). Today the upgrade is
+  Codes 4401, 4403 and 4404 are implemented (§10 S6, wave 1b). Before that the upgrade was
   rejected with HTTP 401/403, which a browser sees as close `1006`. So after
   **2 consecutive attempts that never opened**, the client MUST probe
   `GET /api/users/me`. A 401 or `token_expired` is treated as `4401`. A 200
@@ -326,7 +328,26 @@ V11, V16 and the legacy-empty case in `src/lib/editor-session.test.ts` and
 
 ---
 
-## 10. Required server changes (not implemented; tracked separately)
+## 10. Required server changes
+
+**Status (2026-11-22): all implemented.**
+
+| Item | State | Where |
+|---|---|---|
+| S1 3-way `ApplyDiff` with `base_state`; 409 `base_required` / `base_mismatch` / `base_too_old` | done | wave 1b + wave 3 (`base_too_old`) |
+| S2 every write through the single live room doc (`wsync.Hub`) | done | wave 1b |
+| S3 no-op updates skipped | done | wave 1b |
+| S4 lazy init from disk, exactly once; create rolls back on seed failure | done | wave 1b |
+| S6 close codes 4401/4403/4404/1011/1008 | done | wave 1b |
+| S7 valid y-protocols awareness leave | done | wave 1b |
+| S8 y-websocket numbering (Auth=2, QueryAwareness=3) | done | wave 1b |
+| S9/S11 `/snapshot` returns `state`; `/diff` success also returns `state` | done | wave 1b + wave 3 |
+| S10 Myers multi-hunk text→ops | done | wave 1b |
+| WS auth: single-use 30 s ticket (`POST /api/vaults/:vault/notes/:id/ws-ticket`, WS `?ticket=`); `?token=` deprecated | done | wave 3 |
+| UTF-16 offsets in yffi (non-ASCII edits landed in the wrong range) | done (bug found during S-work) | wave 1b |
+
+The original requirement text follows.
+
 
 - **S1. `ApplyDiff` must honour the base (3-way).** Accept `base_state`, the
   opaque full update from `/snapshot`. Load a temporary doc from it. Diff
