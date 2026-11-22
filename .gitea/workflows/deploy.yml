@@ -1,0 +1,178 @@
+# Constrói o lumi-server e a web no servidor de casa e sobe tudo (ver deploy/README.md).
+# Espelha o pipeline do porvia (ADR 0048): o job roda como root num contêiner com o socket do
+# Docker do host; o checkout padrão não resolve o nome interno do Gitea (http://gitea:3000), então
+# o job clona pelos endereços da rede local nas variáveis da organização LAN_GIT_URL / LAN_GIT_SSH_URL.
+#
+# Disparo manual = rollback: informe em "ref" um commit/tag do guarda-chuva que esteja na main.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "notes/**"
+      - "tui-client"
+      - "apple-client"
+      - "site"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit (SHA) ou tag do guarda-chuva a publicar; vazio = ponta da main"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lumi-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Nunca a partir de outro branch nem de pull request.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GITEA_URL: ${{ vars.LAN_GIT_URL }}
+      COMPOSE_FILE: deploy/compose.prod.yaml
+      TAILNET_DOMAIN: ${{ vars.TAILNET_DOMAIN }}
+    steps:
+      - name: conferir configuração da organização
+        env:
+          GIT_SSH_URL: ${{ vars.LAN_GIT_SSH_URL }}
+          KNOWN_HOSTS: ${{ vars.GIT_SSH_KNOWN_HOSTS }}
+          HAS_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
+          HAS_TS: ${{ secrets.TS_OAUTH_SECRET != '' }}
+          HAS_DB: ${{ secrets.LUMI_DB_PASSWORD != '' }}
+        run: |
+          set -eu
+          missing=""
+          [ -n "$GITEA_URL" ]      || missing="$missing var:LAN_GIT_URL"
+          [ -n "$GIT_SSH_URL" ]    || missing="$missing var:LAN_GIT_SSH_URL"
+          [ -n "$KNOWN_HOSTS" ]    || missing="$missing var:GIT_SSH_KNOWN_HOSTS"
+          [ -n "$TAILNET_DOMAIN" ] || missing="$missing var:TAILNET_DOMAIN"
+          [ "$HAS_SSH_KEY" = "true" ] || missing="$missing secret:DEPLOY_SSH_KEY"
+          [ "$HAS_TS" = "true" ]      || missing="$missing secret:TS_OAUTH_SECRET"
+          [ "$HAS_DB" = "true" ]      || missing="$missing secret:LUMI_DB_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::faltam na organização lumi do Gitea:$missing (ver deploy/README.md)"
+            exit 1
+          fi
+          case "$TAILNET_DOMAIN" in
+            *.ts.net) ;;
+            *) echo "::error::TAILNET_DOMAIN deve ser o nome da tailnet, ex.: tail1234.ts.net"; exit 1 ;;
+          esac
+
+      - name: checkout com os submódulos server e web-client
+        env:
+          TOKEN: ${{ github.token }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.GIT_SSH_KNOWN_HOSTS }}
+          GIT_SSH_URL: ${{ vars.LAN_GIT_SSH_URL }}
+          YCRDT_GIT_URL: ${{ vars.YCRDT_GIT_URL }}
+          REQ_REF: ${{ inputs.ref }}
+          PUSH_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git config --global "http.$GITEA_URL/.extraheader" "AUTHORIZATION: basic $auth"
+          git init -q .
+          git remote add origin "$GITEA_URL/${{ github.repository }}.git"
+          # Histórico da main (o guarda-chuva é pequeno) para validar o ref do rollback.
+          git fetch -q origin "+refs/heads/main:refs/remotes/origin/main"
+          ref="${REQ_REF:-}"
+          if [ -n "$ref" ]; then
+            if ! printf '%s' "$ref" | grep -Eq '^[A-Za-z0-9._/-]{1,100}$'; then
+              echo "::error::ref inválido"; exit 1
+            fi
+            git fetch -q --tags origin
+            sha=$(git rev-parse --verify --quiet "$ref^{commit}" || true)
+            [ -n "$sha" ] || { echo "::error::ref '$ref' não encontrado"; exit 1; }
+          else
+            sha="$PUSH_SHA"
+          fi
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::$sha não está no histórico da main: deploy recusado"; exit 1
+          fi
+          git checkout -q --detach "$sha"
+          # O token do job só lê este repositório: os submódulos privados vêm por SSH,
+          # com uma chave de deploy somente leitura. A troca de URL vale só neste job.
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/lumi_deploy"
+          chmod 600 "$HOME/.ssh/lumi_deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/lumi_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          git config --global "url.$GIT_SSH_URL/lumi/.insteadOf" "https://github.com/ViniZap4/"
+          git submodule update --init --depth 1 server web-client
+          # Submódulo aninhado do servidor (y-crdt, fonte do libyrs.a). Público no GitHub;
+          # opcionalmente um espelho local via variável YCRDT_GIT_URL.
+          if [ -n "${YCRDT_GIT_URL:-}" ]; then
+            git config --global "url.$YCRDT_GIT_URL.insteadOf" "https://github.com/y-crdt/y-crdt.git"
+          fi
+          git -C server submodule update --init --depth 1 third_party/y-crdt
+          git log --oneline -1
+          git submodule status --recursive server web-client
+
+      - name: construir as imagens
+        # Valores fictícios só para a interpolação do compose: nada aqui é segredo
+        # nem chega às imagens (exceto TAILNET_DOMAIN, embutido no bundle da web).
+        env:
+          LUMI_DB_PASSWORD: build-only
+          TS_OAUTH_SECRET: build-only
+        run: |
+          set -eu
+          docker compose build --pull
+
+      - name: backup e subida
+        env:
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+          LUMI_DB_PASSWORD: ${{ secrets.LUMI_DB_PASSWORD }}
+          LUMI_ADMIN_USERNAME: ${{ secrets.LUMI_ADMIN_USERNAME }}
+          LUMI_ADMIN_PASSWORD: ${{ secrets.LUMI_ADMIN_PASSWORD }}
+          LUMI_REGISTRATION: ${{ vars.LUMI_REGISTRATION }}
+          LUMI_PUBLIC_BASE_URL: ${{ vars.LUMI_PUBLIC_BASE_URL }}
+          LUMI_TOS_VERSION: ${{ vars.LUMI_TOS_VERSION }}
+          LUMI_PRIVACY_VERSION: ${{ vars.LUMI_PRIVACY_VERSION }}
+          LUMI_LOG_LEVEL: ${{ vars.LUMI_LOG_LEVEL }}
+        run: |
+          set -eu
+          # A senha entra crua na URL do Postgres: só caracteres seguros em URL.
+          if ! printf '%s' "$LUMI_DB_PASSWORD" | grep -Eq '^[A-Za-z0-9._~-]{16,}$'; then
+            echo "::error::LUMI_DB_PASSWORD precisa de 16+ caracteres em [A-Za-z0-9._~-] (use: openssl rand -hex 32)"
+            exit 1
+          fi
+          answers() { docker compose exec -T "$1" wget -q -T 5 -O /dev/null "$2"; }
+          wait_for() {
+            for _ in $(seq 1 60); do answers "$1" "$2" && return 0; sleep 3; done
+            echo "::error::$1 não respondeu em $2"
+            docker compose ps -a
+            docker compose logs --tail 80 server migrate "$1" || true
+            return 1
+          }
+          # Backup antes da migração, se já existe um banco rodando.
+          if [ -n "$(docker compose ps -q --status running postgres)" ]; then
+            docker compose --profile ops run --rm -T backup
+          fi
+          if ! docker compose up -d --remove-orphans; then
+            echo "::error::docker compose up falhou"
+            docker compose ps -a
+            docker compose logs --tail 80 migrate vaults-init server || true
+            exit 1
+          fi
+          wait_for ts-api http://127.0.0.1:8080/readyz
+          wait_for ts-web http://127.0.0.1:80/
+          for node in ts-api ts-web; do
+            docker compose exec -T "$node" tailscale --socket=/tmp/tailscaled.sock serve status
+          done
+          docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
+          echo "web: https://lumi.$TAILNET_DOMAIN  api: https://lumi-api.$TAILNET_DOMAIN"
+
+      - name: limpeza
+        if: always()
+        run: |
+          rm -f "$HOME/.ssh/lumi_deploy"
+          git config --global --unset-all "http.$GITEA_URL/.extraheader" || true
