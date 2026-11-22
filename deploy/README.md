@@ -1,6 +1,6 @@
 # Deploy do lumi pelo Gitea, no servidor de casa, com Tailscale
 
-Pipeline que publica a **web** e a **API** (com Postgres) do lumi no servidor de casa
+Pipeline que publica a **web**, a **API** (com Postgres) e o **painel de administração** do lumi no servidor de casa
 (ZimaOS) a cada push na `main` do guarda-chuva no Gitea. Mesmo desenho do porvia
 (ADR 0048 do porvia); as diferenças estão em [Desvios do porvia](#desvios-do-porvia).
 
@@ -16,6 +16,7 @@ Fora do deploy: TUI, site e Apple (não há runner macOS).
 |---|---|---|
 | `https://lumi.<tailnet>.ts.net` | web (nginx com o bundle Svelte) | `127.0.0.1:80` |
 | `https://lumi-api.<tailnet>.ts.net` | lumi-server (REST + WebSocket) | `127.0.0.1:8080` |
+| `https://lumi-admin.<tailnet>.ts.net` | painel de administração (`web-client/admin`, SvelteKit) | `127.0.0.1:3000` |
 
 - Cada serviço público roda com `network_mode: service:<acompanhante>`: divide a pilha
   de rede com um contêiner do Tailscale que entra na tailnet como nó próprio, com HTTPS
@@ -29,6 +30,9 @@ Fora do deploy: TUI, site e Apple (não há runner macOS).
 - Migrações: one-shot `migrate` (CLI golang-migrate v4.19.1, mesma versão e mesma
   tabela `schema_migrations` da lib do servidor). `LUMI_AUTO_MIGRATE=false`.
 - `vaults-init` ajusta o dono do volume das vaults para o usuário nonroot do servidor.
+- O painel fala com a API de administração do servidor (`LUMI_ADMIN_ADDR=0.0.0.0:8081`)
+  pela rede do compose, em `http://ts-api:8081` (o servidor divide a rede com `ts-api`).
+  Detalhes em [Painel de administração](#painel-de-administração).
 - Antes de cada deploy (se o banco já existe), `backup` grava em um volume um
   `pg_dump` e um `tar.gz` das vaults, guardando os 7 mais recentes de cada.
 
@@ -42,8 +46,9 @@ Fora do deploy: TUI, site e Apple (não há runner macOS).
    O submódulo aninhado `server/third_party/y-crdt` vem do GitHub público (ou de
    `YCRDT_GIT_URL`, se definido).
 3. `docker compose build --pull` no Docker do próprio servidor (sem registro).
-4. Backup, `docker compose up -d --remove-orphans`, espera `/readyz` da API e a
-   página da web responderem por dentro dos acompanhantes, mostra `tailscale serve status`.
+4. Backup, `docker compose up -d --remove-orphans`, espera `/readyz` da API,
+   `/admin/healthz` do listener de administração, a página da web e o `/healthz` do painel
+   responderem por dentro dos acompanhantes, mostra `tailscale serve status` dos três nós.
 5. Limpeza da chave SSH e do cabeçalho de autenticação.
 
 ## Segredos e variáveis (organização `lumi` no Gitea)
@@ -88,7 +93,7 @@ O Gitea recusa nomes começando com `GITEA_`.
      ```
    - HTTPS e MagicDNS ligados (Admin → DNS → HTTPS Certificates).
    - Crie o cliente OAuth com a tag `tag:lumi` (o do porvia só pode aplicar `tag:porvia`).
-   - Garanta que não há outro nó chamado `lumi` ou `lumi-api` (senão vira `lumi-1`).
+   - Garanta que não há outro nó chamado `lumi`, `lumi-api` ou `lumi-admin` (senão vira `lumi-1`).
 4. **Segredos e variáveis** da organização (tabelas acima).
 5. **Runner**: o `zima-runner` (rótulo `ubuntu-latest`) precisa enxergar a organização `lumi`
    (runner de instância, ou registrar outro runner na organização).
@@ -96,6 +101,68 @@ O Gitea recusa nomes começando com `GITEA_`.
 7. Disparo: push na `main` ou Ações → deploy → *Run workflow* (deixe `ref` vazio).
 
 O primeiro pedido HTTPS a cada nó demora (~20–30 s) pela emissão do certificado.
+
+## Painel de administração
+
+Painel web (`web-client/admin`, SvelteKit com servidor Node) para a API de administração
+do servidor (`server/docs/ADMIN.md`): visão geral, usuários, sessões, cofres, federações,
+tokens e auditoria. Mesmo desenho do painel do porvia (ADR 0037 de lá).
+
+### Primeiro token e entrada
+Tokens de admin (`lpa_…`) só nascem no terminal, nunca pela API. No servidor de casa
+(ZimaOS), em qualquer pasta:
+
+```sh
+docker compose -p lumi-prod exec server /lumi-server token create painel
+# validade padrão de 30 dias; para outra: ... token create painel --ttl 7d
+```
+
+O token sai **uma única vez** no stdout. Abra `https://lumi-admin.<tailnet>.ts.net`
+(de um aparelho da tailnet), cole o token e entre. Guarde-o num gerenciador de senhas
+ou descarte-o: dá para criar outro a qualquer hora.
+
+- O painel confere o token na API e o guarda **só na memória do processo do painel**;
+  o navegador recebe apenas um cookie de sessão aleatório (`__Host-lumi_admin`,
+  HttpOnly, Secure, SameSite=Strict, 12 h no máximo). Reiniciar o contêiner `admin`
+  (ou um deploy) desloga todo mundo; é só entrar de novo com o token.
+- "Sair" encerra a sessão do painel, não o token.
+- Ações destrutivas pedem digitar o nome do alvo; apagar um usuário dono de cofres pede
+  uma segunda confirmação com a lista dos cofres que vão junto.
+
+### Trocar e revogar
+- **Girar:** crie o novo (`token create painel-2026-12`), entre com ele e revogue o
+  antigo na página **Tokens** do painel (pede o nome do token) ou no terminal.
+- **Revogar pelo terminal** (também quando o painel estiver fora):
+  ```sh
+  docker compose -p lumi-prod exec server /lumi-server token list
+  docker compose -p lumi-prod exec server /lumi-server token revoke <id>
+  ```
+  A revogação vale na próxima chamada: o painel recebe `401` e encerra a sessão.
+- Tudo que o painel muda fica na auditoria (`admin.*`, com o nome do token e o IP do
+  aparelho), visível na página **Auditoria** e no log do servidor (`component=admin`).
+
+### Exposição (sem ilusão de isolamento)
+- O listener de administração escuta em `0.0.0.0:8081` **dentro da pilha de rede do
+  nó `lumi-api`**, sem TLS e sem porta publicada no host. O painel chega nele pela rede
+  do compose; os outros contêineres do projeto também chegariam.
+- Com `TS_USERSPACE=true`, o tailscaled entrega no `127.0.0.1` do contêiner **toda**
+  conexão que chega no IP do nó, em qualquer porta. Então bind em loopback **não isola**
+  nada da tailnet: qualquer aparelho da tailnet alcança `lumi-api:8081` (a API de
+  administração, em HTTP puro) e `lumi-admin:3000` (o painel, em HTTP puro: num navegador
+  a origem não confere e o cookie `Secure` não vai, mas um cliente como o curl forja o
+  `Origin`; de todo jeito, sem um token válido não se passa da entrada), a menos que a política da
+  tailnet limite `tag:lumi` à porta 443 (a ACL sugerida acima faz isso; sem ela, vale a
+  política padrão). **Risco aceito pelo dono:** a tailnet só tem aparelhos dele.
+  Mesmo assim, a API exige um token `lpa_` de 256 bits e limita as falhas por IP.
+- O servidor só acredita no `X-Forwarded-For` vindo de `172.16.0.0/12` (a rede do
+  compose, onde está o painel). Conexões entregues pelo tailscaled chegam de
+  `127.0.0.1`, fora da lista, e não conseguem forjar o IP da auditoria. O painel lê o IP
+  do aparelho do `X-Forwarded-For` escrito pelo Serve (`ADDRESS_HEADER`, `XFF_DEPTH=1`);
+  quem alcança `lumi-admin:3000` direto pela tailnet poderia forjar esse valor no limite
+  de entrada do painel e na auditoria.
+- O servidor avisa no log, a cada partida, que a API de administração escuta fora do
+  loopback sem TLS: esperado aqui.
+- Comprometer o painel dá o que o token dá, até ele expirar ou ser revogado no terminal.
 
 ## Rollback
 
@@ -120,8 +187,8 @@ Depois rode o deploy da versão desejada.
 
 ## Como verificar
 
-- No log do job: `tailscale serve status` dos dois nós e a tabela `docker compose ps`
-  com `server`, `web`, `postgres`, `ts-api`, `ts-web` em `running`.
+- No log do job: `tailscale serve status` dos três nós e a tabela `docker compose ps`
+  com `server`, `web`, `admin`, `postgres`, `ts-api`, `ts-web`, `ts-admin` em `running`.
 - De um aparelho na tailnet:
   ```sh
   curl -fsS https://lumi-api.<tailnet>.ts.net/healthz   # {"status":"ok"}
@@ -130,7 +197,8 @@ Depois rode o deploy da versão desejada.
     | grep -i access-control-allow-origin                 # CORS da web
   ```
   e abra `https://lumi.<tailnet>.ts.net` no navegador, faça login e edite uma nota
-  (testa REST + WebSocket).
+  (testa REST + WebSocket). Para o painel, crie um token e entre em
+  `https://lumi-admin.<tailnet>.ts.net` (ver [Painel de administração](#painel-de-administração)).
 - No servidor: `docker compose -p lumi-prod logs --tail 100 server`.
 
 ## Segurança
@@ -142,7 +210,7 @@ Depois rode o deploy da versão desejada.
 - Segredos só via ambiente das etapas, sem `set -x` e sem `docker compose config` no job
   (imprimiria os valores). A senha do banco não aparece em linha de comando de contêiner.
 - Imagens base fixadas por versão exata; nenhuma ação de terceiros (o checkout é feito com git).
-- Os nomes `lumi` e `lumi-api` + o nome da tailnet ficam em logs públicos de certificados
+- Os nomes `lumi`, `lumi-api` e `lumi-admin` + o nome da tailnet ficam em logs públicos de certificados
   (Certificate Transparency). Não revelam dados, só que os nós existem.
 - O segredo OAuth só consegue registrar nós com `tag:lumi`.
 
@@ -161,3 +229,7 @@ Depois rode o deploy da versão desejada.
   `migrations/` nem `/vaults` com dono nonroot (patch proposto ao `lumi-server`).
 - **Backup inclui as vaults** (os markdown são a fonte da verdade), não só o banco.
 - **Rollback por `ref`** validado contra a `main` (o porvia usa só o disparo manual do branch).
+- **Painel só com token do terminal:** o lumi não tem contas de admin com senha nem
+  assistente de primeira configuração (ADR 0038 do porvia); entra-se sempre com um
+  `lpa_`, e "Sair" não o revoga. O painel é um app à parte dentro de `web-client/admin`
+  (o cliente web é um Vite+Svelte simples), com imagem própria construída pelo deploy.

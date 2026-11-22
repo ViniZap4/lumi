@@ -4,8 +4,9 @@
 # atrás de um contêiner acompanhante do Tailscale (HTTPS 443 na tailnet).
 #
 # Nada aqui publica porta no host: a única entrada é a tailnet.
-#   https://lumi.<tailnet>.ts.net      -> web (nginx)
-#   https://lumi-api.<tailnet>.ts.net  -> lumi-server (REST + WebSocket)
+#   https://lumi.<tailnet>.ts.net        -> web (nginx)
+#   https://lumi-api.<tailnet>.ts.net    -> lumi-server (REST + WebSocket)
+#   https://lumi-admin.<tailnet>.ts.net  -> painel de administração (SvelteKit)
 #
 # Uso manual, a partir da raiz do guarda-chuva (o workflow faz o mesmo):
 #   export TAILNET_DOMAIN=... LUMI_DB_PASSWORD=... TS_OAUTH_SECRET=...
@@ -181,13 +182,28 @@ services:
       LUMI_PRIVACY_VERSION: ${LUMI_PRIVACY_VERSION:-}
       LUMI_LOG_FORMAT: json
       LUMI_LOG_LEVEL: ${LUMI_LOG_LEVEL:-info}
-      # API de administração (server/docs/ADMIN.md): DESLIGADA em produção.
-      # Com TS_USERSPACE, o tailscaled entrega no 127.0.0.1 do contêiner toda
-      # conexão que chega no IP do nó, então "só loopback" fica exposto na
-      # tailnet. Religar só com o painel e uma política da tailnet que limite
-      # tag:lumi à porta 443. O CLI não depende do listener (fala com o banco):
+      # API de administração (server/docs/ADMIN.md), usada só pelo painel
+      # (serviço admin), que a alcança pela rede do compose em
+      # http://ts-api:8081: o servidor divide a pilha de rede com ts-api, então
+      # o nome dele na rede é o do acompanhante. Sem TLS (o lumi não termina
+      # TLS): o token trafega em claro só dentro do host. Sem porta publicada.
+      #
+      # Exposição, sem ilusão: 0.0.0.0 alcança também os outros contêineres
+      # deste projeto. E com TS_USERSPACE o tailscaled entrega no 127.0.0.1
+      # do contêiner toda conexão que chega no IP do nó, então mesmo um bind
+      # em loopback ficaria acessível na tailnet: qualquer aparelho da tailnet
+      # chega em lumi-api:8081 (HTTP puro, exige token lpa_, falhas limitadas
+      # por IP), a menos que a política da tailnet restrinja tag:lumi à 443.
+      # Risco aceito: a tailnet só tem aparelhos do dono (deploy/README.md).
+      #
+      # Tokens só pelo CLI, que fala direto com o banco:
       #   docker compose -p lumi-prod exec server /lumi-server token create painel
-      LUMI_ADMIN_ADDR: ""
+      LUMI_ADMIN_ADDR: 0.0.0.0:8081
+      # X-Forwarded-For só vale vindo da rede do compose (o painel); conexões
+      # entregues pelo tailscaled chegam de 127.0.0.1, fora da lista, e o
+      # cabeçalho delas é ignorado. Se o Docker der a esta rede uma faixa
+      # 192.168.x, o XFF é ignorado também (a auditoria mostra o IP do painel).
+      LUMI_ADMIN_TRUSTED_PROXIES: 172.16.0.0/12
     volumes:
       - vaults:/vaults
     tmpfs:
@@ -245,9 +261,69 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # ---------------------------------------------------------------- admin ---
+  # Nó lumi-admin.<tailnet>.ts.net: HTTPS 443 -> 127.0.0.1:3000 (o painel).
+  # Mesmo desenho do nó porvia-admin (ADR 0037 do porvia).
+  ts-admin:
+    build:
+      context: ./tailscale
+      args: {SERVE: admin}
+    image: lumi-ts-admin:local
+    hostname: lumi-admin
+    environment: *tailscale-env
+    volumes:
+      - ts-admin-state:/var/lib/tailscale
+    healthcheck: *tailscale-health
+    logging: *logging
+    restart: unless-stopped
+
+  # O token de admin fica só na memória deste processo (sessão em cookie
+  # HttpOnly); o navegador nunca fala com a API de administração.
+  admin:
+    build:
+      context: ../web-client/admin
+      args:
+        # A proteção de formulários do SvelteKit compara o Origin do navegador
+        # com esta origem, fixada no build.
+        LUMI_ADMIN_ORIGIN: https://lumi-admin.${TAILNET_DOMAIN:?defina TAILNET_DOMAIN}
+    image: lumi-admin:local
+    network_mode: service:ts-admin
+    environment:
+      LUMI_ADMIN_API_URL: http://ts-api:8081
+      # Só no loopback do nó: quem chega é o Serve do Tailscale. (Com
+      # TS_USERSPACE, um aparelho da tailnet também alcança lumi-admin:3000 em
+      # HTTP puro, mas sem um token válido não passa da entrada.)
+      HOST: 127.0.0.1
+      PORT: "3000"
+      # O Serve é o único proxy na frente e escreve X-Forwarded-For com o IP
+      # do aparelho da tailnet: vai para o limite de entrada e para a
+      # auditoria do servidor.
+      ADDRESS_HEADER: x-forwarded-for
+      XFF_DEPTH: "1"
+    tmpfs:
+      - /tmp
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    depends_on:
+      ts-admin: {condition: service_started}
+      server: {condition: service_started}
+    # Distroless (sem shell/wget): o próprio node confere /healthz.
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *logging
+    restart: unless-stopped
+
 volumes:
   pgdata:
   vaults:
   backups:
   ts-api-state:
   ts-web-state:
+  ts-admin-state:

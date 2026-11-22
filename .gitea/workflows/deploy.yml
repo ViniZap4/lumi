@@ -1,4 +1,4 @@
-# Constrói o lumi-server e a web no servidor de casa e sobe tudo (ver deploy/README.md).
+# Constrói o lumi-server, a web e o painel de administração no servidor de casa e sobe tudo (ver deploy/README.md).
 # Espelha o pipeline do porvia (ADR 0048): o job roda como root num contêiner com o socket do
 # Docker do host; o checkout padrão não resolve o nome interno do Gitea (http://gitea:3000), então
 # o job clona pelos endereços da rede local nas variáveis da organização LAN_GIT_URL / LAN_GIT_SSH_URL.
@@ -150,7 +150,7 @@ jobs:
             for _ in $(seq 1 60); do answers "$1" "$2" && return 0; sleep 3; done
             echo "::error::$1 não respondeu em $2"
             docker compose ps -a
-            docker compose logs --tail 80 server migrate "$1" || true
+            docker compose logs --tail 80 server migrate admin "$1" || true
             return 1
           }
           # Backup antes da migração, se já existe um banco rodando.
@@ -164,12 +164,15 @@ jobs:
             exit 1
           fi
           wait_for ts-api http://127.0.0.1:8080/readyz
+          # Listener de administração (LUMI_ADMIN_ADDR), sem token.
+          wait_for ts-api http://127.0.0.1:8081/admin/healthz
           wait_for ts-web http://127.0.0.1:80/
-          for node in ts-api ts-web; do
+          wait_for ts-admin http://127.0.0.1:3000/healthz
+          for node in ts-api ts-web ts-admin; do
             docker compose exec -T "$node" tailscale --socket=/tmp/tailscaled.sock serve status
           done
           docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
-          echo "web: https://lumi.$TAILNET_DOMAIN  api: https://lumi-api.$TAILNET_DOMAIN"
+          echo "web: https://lumi.$TAILNET_DOMAIN  api: https://lumi-api.$TAILNET_DOMAIN  admin: https://lumi-admin.$TAILNET_DOMAIN"
 
       - name: limpeza
         if: always()
