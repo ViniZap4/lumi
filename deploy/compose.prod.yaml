@@ -181,6 +181,10 @@ services:
       LUMI_PRIVACY_VERSION: ${LUMI_PRIVACY_VERSION:-}
       LUMI_LOG_FORMAT: json
       LUMI_LOG_LEVEL: ${LUMI_LOG_LEVEL:-info}
+      # API de administração (server/docs/ADMIN.md): só loopback dentro do
+      # namespace de rede do sidecar ts-api, nunca na tailnet. Tokens:
+      #   docker compose -p lumi-prod exec server /lumi-server token create painel
+      LUMI_ADMIN_ADDR: 127.0.0.1:8081
     volumes:
       - vaults:/vaults
     tmpfs:
