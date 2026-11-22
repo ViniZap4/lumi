@@ -181,10 +181,13 @@ services:
       LUMI_PRIVACY_VERSION: ${LUMI_PRIVACY_VERSION:-}
       LUMI_LOG_FORMAT: json
       LUMI_LOG_LEVEL: ${LUMI_LOG_LEVEL:-info}
-      # API de administração (server/docs/ADMIN.md): só loopback dentro do
-      # namespace de rede do sidecar ts-api, nunca na tailnet. Tokens:
+      # API de administração (server/docs/ADMIN.md): DESLIGADA em produção.
+      # Com TS_USERSPACE, o tailscaled entrega no 127.0.0.1 do contêiner toda
+      # conexão que chega no IP do nó, então "só loopback" fica exposto na
+      # tailnet. Religar só com o painel e uma política da tailnet que limite
+      # tag:lumi à porta 443. O CLI não depende do listener (fala com o banco):
       #   docker compose -p lumi-prod exec server /lumi-server token create painel
-      LUMI_ADMIN_ADDR: 127.0.0.1:8081
+      LUMI_ADMIN_ADDR: ""
     volumes:
       - vaults:/vaults
     tmpfs:
