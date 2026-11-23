@@ -24,6 +24,10 @@ Fora do deploy: TUI, site e Apple (não há runner macOS).
 - **Nenhuma porta é publicada no host.** O Postgres só existe na rede interna do compose.
 - O servidor escuta só em `127.0.0.1` (dentro do nó `lumi-api`), por isso
   `LUMI_REQUIRE_TLS=true` continua valendo: o TLS termina no Serve.
+- No `lumi-api` o Serve **não** é proxy HTTP: usa `TCPForward` + `TerminateTLS`
+  (`tailscale/api.json`). Pelo proxy HTTP do Serve o upgrade do WebSocket chegava ao
+  servidor sem `Upgrade`/`Connection` e voltava `426`, quebrando a edição ao vivo.
+  Com o encaminhamento TCP o Serve só termina o TLS e repassa os bytes.
 - A web é construída com `VITE_LUMI_SERVER_URL=https://lumi-api.<tailnet>.ts.net`
   (o WebSocket vira `wss://` automaticamente) e o servidor aceita só a origem
   `LUMI_ALLOWED_ORIGINS=https://lumi.<tailnet>.ts.net` (CORS e upgrade do WS).
