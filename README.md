@@ -4,6 +4,23 @@ A local-first, markdown-based note-taking system. **v2** is multi-tenant and col
 
 > Full v2 spec: [`SPEC.md`](./SPEC.md) · Docs site: [lumi-note.vercel.app/#/docs](https://lumi-note.vercel.app/#/docs)
 
+## Download
+
+**Latest release: [v0.1.0](https://github.com/ViniZap4/lumi/releases/tag/v0.1.0)** · [all releases](https://github.com/ViniZap4/lumi/releases)
+
+| Platform | File |
+|----------|------|
+| macOS app (Apple Silicon + Intel, macOS 14+) | [`Lumi_v0.1.0_macos_universal.dmg`](https://github.com/ViniZap4/lumi/releases/download/v0.1.0/Lumi_v0.1.0_macos_universal.dmg) |
+| TUI — macOS Apple Silicon | [`lumi-tui_v0.1.0_darwin_arm64.tar.gz`](https://github.com/ViniZap4/lumi/releases/download/v0.1.0/lumi-tui_v0.1.0_darwin_arm64.tar.gz) |
+| TUI — macOS Intel | [`lumi-tui_v0.1.0_darwin_amd64.tar.gz`](https://github.com/ViniZap4/lumi/releases/download/v0.1.0/lumi-tui_v0.1.0_darwin_amd64.tar.gz) |
+| TUI — Linux x86_64 | [`lumi-tui_v0.1.0_linux_amd64.tar.gz`](https://github.com/ViniZap4/lumi/releases/download/v0.1.0/lumi-tui_v0.1.0_linux_amd64.tar.gz) |
+| TUI — Linux ARM64 | [`lumi-tui_v0.1.0_linux_arm64.tar.gz`](https://github.com/ViniZap4/lumi/releases/download/v0.1.0/lumi-tui_v0.1.0_linux_arm64.tar.gz) |
+| TUI — Windows x86_64 | [`lumi-tui_v0.1.0_windows_amd64.zip`](https://github.com/ViniZap4/lumi/releases/download/v0.1.0/lumi-tui_v0.1.0_windows_amd64.zip) |
+
+Checksums: [`SHA256SUMS.txt`](https://github.com/ViniZap4/lumi/releases/download/v0.1.0/SHA256SUMS.txt).
+
+The macOS app is ad-hoc signed and **not notarized**: on first launch right-click → Open, or run `xattr -dr com.apple.quarantine /Applications/Lumi.app`. For the TUI, put `lumi` on your `PATH`, then `lumi login https://your-server` and `lumi`.
+
 ## Architecture
 
 ```
