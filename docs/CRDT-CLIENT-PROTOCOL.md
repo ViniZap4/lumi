@@ -2,7 +2,9 @@
 
 Status: normative for the web, Apple and TUI clients. The server requirements
 in §10 were **implemented in waves 1b and 3** (deployed 2026-11-22); see the
-status table at the top of §10. Passages below that say "today"/"proposed"
+status table at the top of §10. §12 (CRDT lineage / `crdt_epoch`, offline
+replica acks, the `/state-vector` endpoint) was added with server migration
+0008. Passages below that say "today"/"proposed"
 describe the pre-wave-1b server and are kept for history.
 Source of truth read for this spec: `server/internal/crdt/{crdt.go,registry.go}`,
 `server/internal/wsync/{handler.go,hub.go,protocol.go}`,
@@ -49,7 +51,7 @@ Keywords MUST / MUST NOT / SHOULD follow RFC 2119.
 | Server init | `Registry.InitFromText` runs at note create, vault copy and federation import. It builds a fresh doc, inserts the body under the server's random clientID, and stores it as the snapshot. |
 | Persistence | Every applied update is appended to `note_yjs_updates` and fires the federation persist hook. The log compacts into the snapshot at 200 rows or 1 MiB. |
 | Disk mirror | Live updates are mirrored to the `.md` file (frontmatter preserved) after a 500 ms debounce. FS-watcher edits enter the live room as a prefix/suffix `ApplyTextDiff`. |
-| REST | `GET …/snapshot` → `{id,path,text,vector_clock}` (vector_clock = base64 state vector). `POST …/diff` takes `{text, base_clock?, origin?}`, which is diffed against the server's current text, so it is LWW; `base_clock` is ignored today. It also takes `{update, origin?}`, a raw lib0-v1 update applied as a CRDT merge. |
+| REST | `GET …/snapshot` → `{id,path,text,vector_clock}` (vector_clock = base64 state vector). `POST …/diff` takes `{text, base_clock?, origin?}`, which is diffed against the server's current text, so it is LWW; `base_clock` is ignored today. It also takes `{update, origin?}`, a raw lib0-v1 update applied as a CRDT merge. *(Superseded: see §10 for `state`/`base_state`, §12 for `crdt_epoch` and `GET …/state-vector`.)* |
 
 ---
 
@@ -200,6 +202,16 @@ lastServerSV)), origin}`. After a 2xx it sets `lastServerSV` to the returned
   - `4403`: capability missing. Show a read-only state.
   - `4404`: note deleted.
   - `1008`: policy, the per-user concurrent-socket cap (10).
+  - `4409`: **client-side only**, never sent by the server. The client
+    closes its own socket with it when it detects that its replica belongs
+    to another CRDT lineage than the server's note (§12). Do not reconnect
+    with that replica.
+
+  `4401` with reason `ticket_stale` means the note's lineage changed
+  between minting the ws-ticket and the upgrade: mint a fresh ticket once
+  (as for any 4401 on a ticket) and run the §12 check against its
+  `crdt_epoch`. A `4404` can also arrive on an open socket: the note was
+  deleted.
 
   Codes 4401, 4403 and 4404 are implemented (§10 S6, wave 1b). Before that the upgrade was
   rejected with HTTP 401/403, which a browser sees as close `1006`. So after
@@ -345,6 +357,12 @@ V11, V16 and the legacy-empty case in `src/lib/editor-session.test.ts` and
 | S10 Myers multi-hunk text→ops | done | wave 1b |
 | WS auth: single-use 30 s ticket (`POST /api/vaults/:vault/notes/:id/ws-ticket`, WS `?ticket=`); `?token=` deprecated | done | wave 3 |
 | UTF-16 offsets in yffi (non-ASCII edits landed in the wrong range) | done (bug found during S-work) | wave 1b |
+| L1 `crdt_epoch` lineage id per note (migration 0008), on note DTOs, `/changes`, `/snapshot`, `/diff`, ws-ticket (§12.1–12.3) | done | `feat/crdt-epoch` |
+| L2 `GET …/state-vector` → `{id, crdt_epoch, state_vector}` (§12.4) | done | `feat/crdt-epoch` |
+| L3 ticket bound to the epoch: redeem after a lineage change → `4401 ticket_stale`; ws-ticket pre-warms the room so lazy init settles the epoch first | done | `feat/crdt-epoch` |
+| L4 note delete drops the live room: sockets close `4404`, pending mirror discarded, a recreate never reuses the old doc | done | `feat/crdt-epoch` |
+| L5 federation propagates the epoch on note creation (optional trailing frame data) | done | `feat/crdt-epoch` |
+| L6 clients: epoch-first lineage check, client close `4409`, deferred-Step1 / probe acks (§12.5–12.6) | done (web `feat/web-epoch`, Apple `feat/apple-epoch`) | clients |
 
 The original requirement text follows.
 
@@ -432,3 +450,167 @@ The original requirement text follows.
   `update`. If no Go CRDT is available, use §7.2 once S1 ships.
 - Stop POSTing bare `text` with an empty `base_clock`.
 - Keep FS-direct writes only for offline vaults.
+
+---
+
+## 12. CRDT lineage (`crdt_epoch`) and offline replicas
+
+Web and Apple persist a per-note replica (a Y.Doc plus metadata) so the user
+can edit offline, and merge it on the next connection (§5). That is only
+correct if the replica descends from the **same CRDT history** ("lineage")
+as the server's current note. A replica of a history that has ended must
+never be merged: its items would land in the new doc as a second copy of the
+text (vector V2/V8), or resurrect deleted content.
+
+### 12.1 What `crdt_epoch` is
+
+`crdt_epoch` is an opaque string per `(vault, note id)`, stored in
+`notes.crdt_epoch` (migration 0008). Today it is 32 lowercase hex chars
+(128 random bits). Clients MUST treat it as opaque and compare it only for
+string equality.
+
+It changes exactly when a **new** CRDT history starts for the note id:
+
+| Event | Epoch |
+|---|---|
+| Note create (`POST /notes`): row inserted with a fresh epoch, the seed reuses it | new |
+| Delete + recreate under the same id (new row) | new |
+| Lazy init: a note with no CRDT state is seeded from its file on first load (§10 S4) | new (vault seq bumped, so `/changes` delivers it) |
+| Vault copy: each copied note is seeded from text in the new vault | new |
+| Federation: a peer creating the row for an announced note | adopts the sender's epoch (§12.7) |
+| Live edits, `/diff`, `PATCH` body, raw updates | unchanged |
+| FS-watcher diff merge of an external edit | unchanged |
+| Update-log compaction into the snapshot | unchanged |
+| Rename / move | unchanged |
+
+A seed is atomic and exactly-once. It replaces the snapshot, drops every
+update-log row and stamps the epoch in one transaction. If state already
+exists for the note, the seed does nothing: the epoch always names the doc
+the server actually holds.
+
+Deleting a note also drops its in-memory room. Open sockets close with
+`4404`, a pending debounced mirror is discarded, and a recreated note never
+inherits the old doc.
+
+Existing rows were backfilled with fresh epochs. A replica persisted before
+0008 has no epoch, so it goes through the fallback in §12.5 once and then
+adopts the server's value.
+
+### 12.2 Where clients get it
+
+| Source | Field |
+|---|---|
+| `GET /api/vaults/:vault/notes` (items), `GET …/notes/:id`, `POST …/notes`, `PATCH …/notes/:id` | `crdt_epoch` |
+| `GET /api/vaults/:vault/changes` → `notes[]` | `crdt_epoch`. Rows untouched since 0008 keep their old `change_seq`, so an incremental pull does not re-deliver them. Use the other sources. |
+| `GET …/notes/:id/snapshot` | `crdt_epoch` (describes `state` / `vector_clock`) |
+| `POST …/notes/:id/diff` (success) | `crdt_epoch` |
+| `POST …/notes/:id/ws-ticket` → 201 | `{ticket, expires_at, crdt_epoch}` |
+| `GET …/notes/:id/state-vector` | `{id, crdt_epoch, state_vector}` (§12.4) |
+
+Servers predating 0008 omit the field everywhere. Clients MUST decode it as
+optional.
+
+### 12.3 Consistency guarantees
+
+- `/snapshot`, `/state-vector` and `/diff` read the epoch together with the
+  doc. The server reads it before and after the doc view and retries if a
+  new history started in between (for example the read itself triggering
+  lazy init). The epoch returned always describes the returned state. If it
+  keeps changing, the server answers `409`. Retry.
+- `ws-ticket` loads the note's room before answering, so lazy init happens
+  at mint time, not at join. The ticket is bound to the epoch it reported.
+  If the lineage changes before the upgrade (delete+recreate), the redeem
+  is refused with `4401 ticket_stale`. A client that joins with a ticket
+  therefore joins exactly the history whose epoch the ticket response
+  carried.
+
+### 12.4 `GET /api/vaults/:vault/notes/:id/state-vector`
+
+- Auth: `note.read`, the same as `/snapshot`.
+- `200 {"id": "...", "crdt_epoch": "...", "state_vector": "<base64>"}`.
+  `state_vector` is the lib0-v1 state vector, encoded the same way as
+  `/snapshot` `vector_clock`. It carries no text and no full state, so it
+  is a small fraction of `/snapshot`'s cost. `Cache-Control: no-store`.
+- `404 {"error":"not_found"}`: the note does not exist. `503
+  crdt_unavailable`: the server runs without libyrs.
+- Older servers do not have the route. Fiber answers 404 with a non-JSON
+  body. Clients treat a 404/405/501 from this route as "unsupported" until
+  proven otherwise, and fall back to `/snapshot`. If `/snapshot` 404s as
+  well, the note is gone.
+
+Use it to confirm that the server absorbed a replica's updates (the
+server's state vector covers the replica's local clocks) and that the
+lineage still matches. It does not replace `/snapshot` where the text is
+needed.
+
+### 12.5 Lineage check (normative for clients)
+
+Every persisted replica records the `crdt_epoch` it was synced under, next
+to its other metadata. Before the replica's state reaches the server (any
+Step1/Step2/update or REST write), the client compares that epoch with the
+server's current epoch. Sources, in order of preference: the ws-ticket
+response for the connection being opened, then `GET …/notes/:id`, then
+`/state-vector`.
+
+| Replica epoch | Server epoch | Verdict |
+|---|---|---|
+| `E` | `E` | Same lineage. Merge. No other check is needed, and equality wins over any created_at mismatch. |
+| `E1` | `E2` | **Lineage changed.** Never merge. Save the replica's text as a conflict copy, drop the replica and start empty (§2). If the socket is already open, close it with client code `4409`. |
+| absent on either side | — | Fall back to the pre-epoch heuristic: `notes.created_at` (1 s resolution) **and** state-vector coverage (the server's sv must cover every clock the replica already had acknowledged). If it passes, **adopt** the server's epoch and persist it. If it fails, treat it as lineage changed. |
+
+The check runs on **every** (re)connect, not only on cold start. A
+long-lived in-memory session that reconnects after the note was recreated
+offline is caught by the ticket's epoch.
+
+A snapshot or REST refetch whose `crdt_epoch` differs from the session's
+MUST NOT be merged into the session's doc (§5, "refetch merges").
+
+### 12.6 Acknowledging offline edits
+
+A replica stays "pending" (unsent edits) until the client has **proof**
+that the server persisted its updates. Receiving a SyncStep2 is not proof:
+the server can send its Step2 before it has applied the client's Step2.
+The two shipped clients prove it in different ways. Both are valid.
+
+- **Deferred Step1 + probe (Apple).** On join the client sends nothing
+  until the server's SyncStep1 arrives (it is always the first frame).
+  That frame is checked against the lineage guard (§12.5; for the
+  fallback, the server's sv must dominate the acknowledged sv). Only
+  then does the client send its Step2 (the offline diff) followed by its
+  **own Step1 as a probe**. After later live edits it sends another
+  Step1 probe (debounced ~300 ms). The server processes one socket's frames
+  in order and persists each update before reading the next frame. So the
+  Step2 that answers a probe proves that every update sent before that
+  probe is durable. The client then marks the edits up to that point as
+  acknowledged and merges the reply's sv into its known server sv.
+- **REST state-vector probe (web).** y-websocket sends Step1 on its own,
+  so the web client does not gate the handshake. It runs the lineage
+  check over REST before connecting (`/snapshot` + note metadata, because
+  it needs the server text for a conflict copy). After `sync(true)`, and
+  ~1.5 s after the last live edit, it calls `GET …/state-vector`
+  (falling back to `/snapshot` on old servers) and acknowledges the
+  edits only if the epoch matches and the returned sv covers the
+  replica's clocks.
+
+Either way, a replica is deleted from local storage only after an
+acknowledgement, never on send.
+
+### 12.7 Federation
+
+A follower's doc for a note is the same history as its home's doc: the
+state arrives over the relay and is never seeded locally (§10 S5). The
+epoch is therefore **propagated**. Manifest and announce frames carry the
+sender's epochs as optional trailing data (peers predating epochs ignore
+trailing bytes; a peer that omits them gets a locally generated epoch). The
+peer that creates the row adopts the sender's epoch.
+
+An **existing** row keeps its own epoch. Federation reconciles content by
+CRDT state, not by epoch, and a client is bound to one server, so it only
+ever compares epochs from that server.
+
+Known gap: a note deleted and recreated on one side while the link is down
+can still be CRDT-merged with the other side's old history on reconnect
+(this predates epochs). The epochs on the two servers then differ, so
+clients of either side refuse to merge their old replicas into it. That is
+the conservative outcome.
+
