@@ -54,6 +54,19 @@ Status: draft, 2026-11-24. Applies to web, Apple (macOS first) and TUI. The owne
   - mouse: Cmd/Ctrl-click opens in a vertical split and Shift-Cmd/Ctrl-click in a horizontal split.
 - Each pane has its own live session. Two panes on the same note share one session/doc.
 - The layout is remembered per book, per device.
+- **Zoom (tmux-style focus/unfocus)** (owner, 2026-11-25):
+  - `Ctrl-w z` (and `:zoom`) toggles the focused pane between filling the whole note area and returning to the exact previous layout. The mouse does the same with a zoom button in the pane header, or a double-click on the header.
+  - While zoomed, the other panes are hidden (not closed). A "zoomed" badge shows in the pane header and the status line.
+  - Moving to another pane (`Ctrl-h/j/k/l`, `Ctrl-w w`) or opening a split unzooms first.
+  - The zoom state is not persisted.
+  - The zoom animates (shared-element grow/shrink) and is instant under Reduce Motion.
+- **Click-to-focus:** the first click or tap anywhere in a pane focuses it and also performs the click (no "first click only focuses" dead clicks). On macOS this means accepting first mouse in pane content views.
+- **Opening in a split from the explorer by mouse** (owner, 2026-11-25), besides `Enter` / `Ctrl-v` / `Ctrl-s`:
+  - each hovered or selected row shows small inline actions: Open, Open right, Open below;
+  - the right-click menu has the same three items;
+  - dragging a note row onto the left, right, top or bottom edge of a pane drops it into a new split on that side, with an edge highlight while dragging;
+  - the footer hints are clickable.
+
 
 ## 4. Hover link preview
 
