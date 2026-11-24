@@ -156,7 +156,10 @@ cd site && npm install && npm run dev
   - `link-helper.ts`: link helper.
 - **Offline:** `replica.ts`, `offline-store.ts`, `lineage.ts`, `ws-ticket.ts`.
 - **Navigation:**
-  - `shell-keymap.ts`, `miller.svelte.ts`, `notetree.ts`, `fileops.ts`: yazi-style explorer.
+  - `components/FloatingExplorer.svelte`, `shell-keymap.ts`, `notetree.ts`, `fileops.ts`, `book-home.ts`: floating explorer (the only navigation) and the book home.
+  - `pane-tree.ts`, `link-open.ts`, `hover-preview.ts`, `session-pool.ts`, `note-views.ts`, `deeplink.ts`: splits, link routing, hover card, shared sessions, view registry, deep links.
+  - `kanban/`, `canvas/`, `text-diff.ts`, `live-text*.ts`: Kanban and JSON Canvas views over minimal ranged edits.
+  - `motion.ts`, `remote-flash.ts`: spring motion and the remote-edit flash.
   - `pane-nav.ts`, `preview-keys.ts`: Ctrl-hjkl panes and keyboard reading of the split preview.
   - `legend.ts`, `hints.ts`, `palette.ts`, `context-actions.ts`: legend, hint mode, palette, context menu.
 - **Rendering:**
@@ -181,16 +184,22 @@ cd site && npm install && npm run dev
 - `App/`: the `@main` app — the yazi shell, palette, legend, book settings sheet and split preview.
 
 ### UX model (all clients)
-The clients are keyboard-first but mouse-friendly, with the same keymap everywhere. Changing a key in one client means changing it in all of them.
-- **Moving:** `j/k/h/l`, `gg/G`, counts, `/` filter with `n/N`, `H/L` history.
-- **Files:** `a` new (`dir/name` creates folders), `r` rename/move, `d` delete with an inline confirm, `y/p` duplicate.
-- **Note:** `i/e` edit, `q/Esc` back.
-- **App:**
-  - `space`/`:`/⌘K palette, `?` help, `[`/`]` switch books;
-  - `Ctrl-h/j/k/l` and `Ctrl-w` move between panes;
-  - `f`/`F` hint mode;
-  - `,` opens settings (`:settings` in the editor; ⌘, in the Mac app only).
-- **Legend:** a one-line command legend above the status line.
+The clients are keyboard-first but mouse-friendly, with the same keymap everywhere (contract: `docs/SPEC-PARTE2.md`). Changing a key in one client means changing it in all of them.
+- **Navigation is the floating explorer, and only that** (owner decision, 2026-11-24): there is no full-screen explorer or books sidebar.
+  - Opening a book restores the saved split layout, else the last opened note, else a calm home with the explorer auto-opened.
+  - Open the explorer with `-`, `<leader>e`, `:explore`, the toolbar button or the palette. `gb` opens the books level (accounts → books); `[`/`]` cycle books.
+  - Narrow screens get a full-height sheet.
+- **Explorer:** `j/k/h/l`, `gg/G`, counts, `/` filter with `n/N`, `a` new (`dir/name` creates folders, `name.canvas` creates a canvas), `r` rename/move, `d` delete with an inline confirm, `y/p` duplicate. `Enter` opens here; `Ctrl-v`/`Ctrl-s` open in a split.
+- **Notes:** Reading | Live | Source, plus the split preview beside Source. Kanban notes (Obsidian format) open as a Board and `.canvas` files (JSON Canvas 1.0) as a Canvas; both are registered note views with a Source switch.
+- **Splits:** `Ctrl-w v/s/q/o/=`, `:vsplit`/`:split [note]`, and `Ctrl-h/j/k/l` plus `Ctrl-w` to move between panes.
+- **Links:** `gf`/`Enter` follow; `Ctrl-w f` and `⌘`/Ctrl-click open in a vsplit, `Ctrl-w F` in an hsplit.
+- **Hover card:** after 350 ms over a link, or with `K`.
+- **App keys:** `space`/`:`/⌘K palette, `?` help, `f`/`F` hint mode, `,` settings (`:settings` in the editor; ⌘, in the Mac app only). A one-line command legend sits above the status line.
+- **Motion "the app feels alive":**
+  - spring motion, shared-element transitions, staggered lists;
+  - a breathing/pulsing sync dot and a remote-edit flash.
+  - It never blocks input, stays ≤220 ms on the typing path, and turns off entirely under Reduce Motion (system or app setting).
+- **CLI:** `lumi open [book[/note]]` opens the Mac app via `lumi://open?...` (strictly validated; it never adds accounts or books), or the web deep link `#/b/<vault>/n/<note>` elsewhere.
 
 ## Deploy, remotes and releases
 
