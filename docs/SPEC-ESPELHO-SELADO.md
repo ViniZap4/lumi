@@ -1899,3 +1899,11 @@ Each question lists the **recommended option first**.
     - (a) **No: sealed books are single-server until S5 (mirrors of sealed
       books also land in S5).**
     - (b) Ship federation together with S3.
+
+## Owner decisions (2026-11-24)
+
+- **D1 Recovery:** (a) mandatory recovery key (256-bit, shown once, re-confirmed) + key reset with re-sharing by book admins.
+- **D2 TUI in v1:** (a) locked — sealed books listed with 🔒, not openable; full support later (S6).
+- **D3 Metadata:** (a) encrypt note paths, titles and the book name (random note ids, encrypted meta envelopes).
+- **D6 Public mirrors:** (a) only as publish mirrors, with owner consent, default scope `publish: true` notes, filtered at home, off unless the mirror operator enables it.
+- D4, D5, D7–D15: pending owner confirmation; the recommended options (a) are the working assumption.
