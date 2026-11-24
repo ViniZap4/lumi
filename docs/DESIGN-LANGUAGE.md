@@ -1,14 +1,18 @@
 # lumi design language
 
-Status: v1, 2026-11-25. This applies to every lumi client: web (reference implementation), Apple (macOS first) and TUI. It refines SPEC-PARTE2 §1 ("look and motion") and keeps its limits.
+Status: v2, 2026-11-26 (motion v2, rich prose palette, space pass, Livros shelf). v1 was 2026-11-25. This applies to every lumi client: web (reference implementation), Apple (macOS first) and TUI. It refines SPEC-PARTE2 §1 ("look and motion") and keeps its limits.
 
 Source of truth in the web client:
 
 - `src/styles/tokens.css`: every colour, depth, type, space, shape and motion token.
-- `src/lib/motion.ts`: the spring numbers, with a test that keeps the CSS `linear()` strings in sync.
+- `src/lib/motion.ts`: the spring numbers (with a test that keeps the CSS `linear()` strings in sync), the spring integrator and the shared rAF engine (motion v2), and the motion level.
+- `src/lib/motion-actions.ts`: the choreographies built on it (cursor slab, block rise, carousel, origin of overlays).
+- `src/lib/prose-palette.ts`: the rich prose palette, contrast-checked per theme.
 - `src/lib/ambient.ts`: ambient light and the pause while the tab is hidden.
 
-The owner's brief (2026-11-25), in Portuguese: *"quero um design vivo, quero sentir que lumi é um app vivo, as animações precisam ser boas; mas a navegação está boa, e o split também."* In English: the design should feel alive, the animations have to be good, and the navigation and splits are already good. So this document changes look and motion only. Navigation (the floating explorer) and the split model stay exactly as SPEC-PARTE2 §2–3 define them.
+The owner's brief (2026-11-25), in Portuguese: *"quero um design vivo, quero sentir que lumi é um app vivo, as animações precisam ser boas; mas a navegação está boa, e o split também."* In English: the design should feel alive, the animations have to be good, and the navigation and splits are already good. So this document changes look and motion only.
+
+Owner feedback on v1 (2026-11-26): *"as animações e a sensação do lumi ser vivo não aconteceu; a mudança para um design mais moderno sim, mas ainda precisa melhorar mais"* — the motion was too subtle and short to be perceived (≤ 220 ms, 1 % overshoot, tiny transforms, close instant, a cross-fade on note open). Motion v2 (§6) keeps every key instant but makes each response *felt*: real springs with visible physics, choreography with an origin and a destination, and exits that are quick but visible. Also: *"o html do markdown renderizado não está bom, e está só com uma cor"* → the rich prose palette (§2.5). Navigation (the floating explorer) and the split model stay exactly as SPEC-PARTE2 §2–3 define them.
 
 ---
 
@@ -17,7 +21,7 @@ The owner's brief (2026-11-25), in Portuguese: *"quero um design vivo, quero sen
 | | means | never |
 |---|---|---|
 | **Alive** | Things respond. The cursor glides, focus blooms, presence breathes, a remote edit glows once. The app shows it is awake without being asked. | Gimmicks, perpetual motion in the reading area, confetti. |
-| **Calm** | Motion is slow where it is ambient (≥ 2.4 s periods) and short where it is a response (≤ 320 ms). Colour is the theme's own, used sparingly. | Flashing, bouncing for its own sake, saturated fills. |
+| **Calm** | Motion is slow where it is ambient (≥ 2.4 s periods) and quick where it is a response: 90 % there in ≈ 90–160 ms, the spring's tail (≤ 720 ms) is the physics you feel, never a wait. Colour is the theme's own, used sparingly. | Flashing, bouncing for its own sake, saturated fills. |
 | **Precise** | Every movement explains a change of state: where something came from, where it went, what has focus. Keys are never delayed. | Decorative motion that hides state, any animation on the typing path that blocks input. |
 
 Test for any new piece of motion: *does it tell the user something (focus, origin, result, presence)?* If not, it must be ambient and ≥ 2.4 s, or it goes.
@@ -71,6 +75,30 @@ The same tokens apply in both, with these changes for light themes (`[data-theme
 - surfaces derive from overlayBg rather than adding text.
 
 Contrast floors are 4.5:1 for body text (`ink-1`, `ink-2`) and 3:1 for UI text and icons (`ink-3`). `ink-4` is never the only carrier of meaning.
+
+### 2.5 Prose palette (rendered markdown)
+
+Rendered markdown is not one colour. `lib/prose-palette.ts` derives, per theme, a palette that every client can reproduce, and pulls each colour toward the theme's ink until it clears its contrast floor on the surface it sits on (dark themes mix toward `text`; light themes toward `text` darkened 45 % with black, which keeps the hue's chroma). Tint strengths shrink until body text keeps 4.5:1 on them. A vitest checks every theme.
+
+| element | source | floor |
+|---|---|---|
+| h1 | primary (+ a 3 px primary→secondary bar under it) | 4.5 |
+| h2 | secondary (rule starts in its colour, fades into a hairline) | 4.5 |
+| h3 / h4 / h5-6 | accent 62 % · primary 42 % · secondary 40 % over text; h5/h6 caps | 4.5 |
+| bold / italic | text + 30 % warning (warm) / text + 30 % secondary | 4.5 |
+| strike | ink at 62 %, line in error | 3 |
+| ==mark== | warning tint (≤ 38 %), text on it | 4.5 on the tint |
+| link | accent; resting 1 px line at 40 %, a solid line draws in from the left on hover (glide) | 4.5 |
+| inline code | a theme green (the theme's own green when it has one, else #9ece6a / #3f7d32) on a 12 % tint pill | 4.5 on the pill |
+| code block | primary-tinted surface; syntax: keyword secondary, string green, number warning, function primary, type accent, property info, tag error, comment ink | 4.5 (comment 3) |
+| quote | secondary→primary bar, secondary 6 % wash, italic | 4.5 on the wash |
+| callouts | note/info = info, todo = primary, abstract = accent, tip/success = green, question/example = secondary, warning = warning, danger = error, quote = muted; title in the colour, body in text | 4.5 on the tint |
+| list markers, task boxes | primary | 3 |
+| #tags | chips; hue = FNV-1a(name) mod 5 over primary, secondary, accent, green, warning | 4.5 on the chip |
+| tables | header primary 10 % tint + primary ink; zebra primary 3.5 % | 4.5 |
+| hr, footnote refs | primary→secondary gradient; accent pill refs | — |
+
+Mac: compute the same values once per theme (the algorithm is 40 lines; no runtime colour mixing per draw). TUI: the heading ramp, link, code and callout colours map 1:1 to lipgloss foregrounds; tints become nothing (terminals have no alpha).
 
 ---
 
@@ -126,21 +154,35 @@ Tracking: `--tracking-ui` (−0.006 em) on labels, `--tracking-tight` (−0.022 
 
 ---
 
+**Space (2026-11-26, owner: *"não está tendo um bom aproveitamento de espaço"*).** Reading width is a setting ("Largura de leitura": estreita 68ch · média 84ch, default · larga 110ch · total), one `--md-measure` for the reader, Live Preview and split preview; wide screens show an outline rail in the gutter when it fits. Row density is a setting ("Densidade": confortável 30 px · compacto 24 px). Chrome is one row: top bar 38 px, note bar 36, pane header 32, one 24 px status line that carries the legend. The explorer takes up to 90 % × 86 % of the viewport.
+
+**Keys (SPEC-PARTE2 §5b).** `-` always opens the explorer, including from a focused canvas or board in any mode. Canvas zoom: in `+` `=` `zi` ⌘/Ctrl-`+`; out `_` `zo` ⌘/Ctrl-`-`; fit `0` `zf`.
+
+---
+
 ## 6. Motion language
 
-### 6.1 Springs
+### 6.1 Springs (v2)
 
-Every response uses one of five named springs (mass 1). The web samples each one into a CSS `linear()` easing (`--spring-*`), paired with `--spring-*-ms`.
+Every response uses one of five named springs (mass 1). v1's springs were critically damped and ≤ 320 ms: correct, and invisible. v2 keeps the *rise* short (90 % of the way in ≈ 90–160 ms, so nothing feels slow) but lets the tail carry visible physics. The web samples each into a CSS `linear()` easing (`--spring-*`, paired with `--spring-*-ms`) and also integrates them for real in JS (§6.10).
 
-| name | stiffness | damping | ζ | settle (ms) | overshoot | SwiftUI `.spring(response:dampingFraction:)` | use |
-|---|---|---|---|---|---|---|---|
-| **snappy** | 820 | 50 | 0.87 | 220 | 0.2 % | (0.22, 0.87) | press, small UI, anything near typing |
-| **glide** | 600 | 40 | 0.82 | 260 | 1 % | (0.26, 0.82) | things that *travel*: list cursor, mode pill, kanban landing, zoom grow, shared title |
-| **gentle** | 420 | 36 | 0.88 | 300 | 0.1 % | (0.31, 0.88) | panes, views, list entry, folder travel |
-| **bouncy** | 620 | 30 | 0.60 | 320 | 9 % | (0.25, 0.60) | overlays settling, badges/avatars popping in, node spawn |
-| **soft** | 220 | 28 | 0.94 | 420 | 0 | (0.42, 0.94) | large surfaces, the home entrance, focus veils |
+| name | stiffness | damping | ζ | ω0 | settle (ms) | overshoot | SwiftUI `.spring(response:dampingFraction:)` | use |
+|---|---|---|---|---|---|---|---|---|
+| **snappy** | 700 | 38 | 0.72 | 26.5 | 320 | 3.6 % | (0.237, 0.72) | press, small UI, pills |
+| **glide** | 380 | 26 | 0.67 | 19.5 | 410 | 5.8 % | (0.322, 0.67) | things that *travel*: cursor slab, folder carousel, pane sizes, focus light, landing |
+| **gentle** | 260 | 28 | 0.87 | 16.1 | 370 | 0.2 % | (0.390, 0.87) | content rising in, panes, views |
+| **bouncy** | 400 | 20 | 0.50 | 20.0 | 560 | 16 % | (0.314, 0.50) | things that *pop*: overlays opening, toasts, badges, names, nodes, drops |
+| **soft** | 150 | 22 | 0.90 | 12.2 | 520 | 0 | (0.513, 0.90) | veils, large surfaces, ambient |
 
-Exact equivalent: SwiftUI `.interpolatingSpring(mass: 1, stiffness: k, damping: c)`. TUI (harmonica): `NewSpring(FPS(60), ω0 = √k, ζ)`, so ω0 = 28.6 / 24.5 / 20.5 / 24.9 / 14.8.
+Exact equivalent: SwiftUI `.interpolatingSpring(mass: 1, stiffness: k, damping: c)`. TUI (harmonica): `NewSpring(FPS(60), ω0, ζ)` with the ω0 and ζ above.
+
+**Motion level** ("Movimento", Settings → Appearance; palette "Movimento: …"):
+
+| level | meaning |
+|---|---|
+| **completo** (default) | everything below |
+| **suave** | the same choreography; travel × 0.45 and no overshoot (every spring's damping raised to ≥ 0.95 × critical; CSS `--spring-snappy/glide/bouncy` take gentle's curve) |
+| **reduzido** | instant state changes; no transforms or fades. The OS *prefers-reduced-motion* always maps here. |
 
 Durations that are not springs:
 
@@ -149,15 +191,16 @@ Durations that are not springs:
 | tap | 90 | press feedback, hover tints |
 | fade | 140 | colour and opacity changes |
 | exit | 120 | every exit; always faster than its entrance |
-| flash | 700 | remote-change flash, sync ping |
+| flash | 700 | remote-change flash (sync ping rings: 900 ms, a second ring 160 ms later) |
 | breath | 2400 | presence dots, sync breathing |
-| ambient | 48000 | the home light drift |
+| ambient | 26000 | the home light drift (v1: 48 s, too slow to notice) |
 
 ### 6.2 Choreography rules
 
-1. **Enter on a spring, exit on a curve, faster.** Entrances use gentle, bouncy or soft. Exits use `--ease-exit` at ≤ 120 ms, or are instant. The key path never waits on an exit.
+1. **Enter on a spring, exit quick but visible.** Entrances use gentle, glide or bouncy. Exits are never instant in completo: a *ghost* (a snapshot clone) plays the exit on snappy while the real DOM is already in its final state, so the key path never waits on an exit.
+8. **Interruptible, never queued.** Every JS-driven motion is a spring integrated per frame; a new target mid-flight keeps position *and velocity* (holding `j` makes the cursor slab stream, repeated `l` adds momentum to the carousel).
 2. **Origin is truth.** Things come from where they were. An explorer row grows into the note title (shared element), a link morphs into its hover card, a split opens from the side it was asked for, a zoomed pane slides from its old box, and a kanban card lands from where it was dropped.
-3. **Stagger is a ripple, not a queue.** 12–22 ms steps, at most 160 ms in total, never more than 14 items, and items are interactive from frame 0.
+3. **Stagger is a ripple, not a queue.** 16–55 ms steps (rows 22, blocks 26, columns 55), at most 240 ms in total, never more than 14 items, and items are interactive from frame 0.
 4. **Follow-through.** Things with mass overshoot by about 1 % (glide) or lean with velocity (the kanban card tilts by up to 7°, proportional to horizontal pointer velocity, and settles upright when still). Canvas pans coast with exponential friction (τ ≈ 260 ms).
 5. **Anticipation is press.** A press scales to 0.96–0.985 at tap speed and springs back on release (snappy). Nothing winds up before acting.
 6. **One thing leads.** In a compound change, the element the user acted on moves first, and the context follows 40–70 ms later (folder travel: the column first, the preview after; note open: the old page leaves, the new arrives 70 ms later, so two texts never cross-dissolve).
@@ -214,6 +257,33 @@ Skeletons have one compositor sweep (a translated highlight on a pseudo-element,
 
 Empty states keep the ambient light (the home), keep their keys visible, and have one primary action. No illustrations.
 
+### 6.10 Motion v2 choreography (what you should *see*)
+
+Engine: `Spring` (semi-implicit Euler, ≤ 4 ms sub-steps, frame-rate independent, rests by distance and speed) and one shared rAF loop (`engine`) that writes only `transform` and `opacity`, stops when everything rests, clamps frame gaps to 64 ms, and hands elements back to CSS at rest. `exitGhost()` clones an element for an exit. Frame capture can freeze and seek the clock (`window.__lumiMotion`).
+
+| # | moment | before (v1) | after (v2) | springs / timing | Mac (SwiftUI) | TUI |
+|---|---|---|---|---|---|---|
+| 1 | Explorer open | panel fades in at scale .965 (≈ 3 % change), scrim 140 ms fade | panel GROWS from its trigger (explorer button or the pointer's last trigger), scale .80 → 1 with 16 % overshoot; columns dealt in from the left 55 ms apart; the scrim and its vignette ease in (no second blur layer: it doubled frame cost) | bouncy (panel) · glide (columns, x −26) · soft (scrim) | `.scaleEffect(anchor: triggerUnitPoint)` on bouncy; columns `.offset(x:)` with `.delay(i*0.055)` | box draws at once; columns appear 1 frame apart |
+| 2 | Explorer close (Esc, outside) | instant | ghost collapses toward the trigger (scale .86, fade) while the overlay is already gone | snappy | `.transition(.scale(0.86, anchor:).combined(with: .opacity))` | instant |
+| 3 | Open note from explorer | row-name morph + cross-fade | ghost panel collapses INTO the opened row (scale .5 at the row), the row name flies to the note title (shared element), old page lifts away (110 ms), new page's blocks rise | snappy · glide · gentle | `matchedGeometryEffect` row→title + panel scale toward row | instant; title flashes accent 2 frames |
+| 4 | Folder travel (l / h) | columns shift 14 px | carousel: columns pushed ±90 px toward where you came from and spring home with overshoot; repeated presses ADD (momentum); preview arrives 45 ms later from further out; rows ripple in from the side | glide | `.offset(x:)` with velocity-preserving spring | columns redraw; 2-frame shift |
+| 5 | Cursor travel (j / k) | slab slides with a CSS transition | a spring slab that STRETCHES along its travel with speed (scaleY up to 1.55 from the trailing edge) and settles to its own height; holding j streams; long jumps start ≤ 6 rows away | glide | `.offset(y:)` + `scaleEffect(y: 1 + min(.55, |v|/2600), anchor: trailing)` | highlight moves; previous row dims 1 frame |
+| 6 | Note opens (content) | page cross-fade | content RISES by blocks: first 10 visible blocks, y 18 → 0 and fade, 26 ms apart (≤ 240 ms), after a 40 ms beat; only when a different note arrives (edits never) | gentle | `.offset(y:)`+opacity per paragraph with `.delay` | lines revealed 1 frame apart (≤ 6) |
+| 7 | Pane split | new pane slides 18 px | the new pane UNFOLDS from the divider (scaleX/Y .4 → 1 from the shared edge, overshoots); neighbours spring to their new sizes (FLIP) | glide | `.transition(.scale(0.4, anchor: .leading))` + frame animation | border draws from the split side (3 frames) |
+| 8 | Pane focus | ring fades in | a bar of LIGHT travels along the top edges from the old pane to the new one, then fades into the new pane's lit edge; ring blooms | glide (travel) · soft (fade) | a `Capsule` overlay with `matchedGeometryEffect` between panes | border colour moves |
+| 9 | Pane zoom | slide from old box + clip | the pane expands from its box (clip + translate); the others RECEDE (ghosts scale .9 and fade); unzoom: the pane FLIPs back into its slot and the others come forward one by one (45 ms apart) | glide | `matchedGeometryEffect` + others `.scaleEffect(0.9).opacity(0)` | instant + badge |
+| 10 | Vim mode change | edge colour cross-fade 140 ms | the new mode's colour SWEEPS down the editor's edge (a lit 3 px bar, 520 ms), edge colour eases over 320 ms, the mode pill gets a bouncy kick (scale 1.18 → 1) | bouncy (pill) · ease (sweep) | `Rectangle().offset(y:)` sweep + pill `.scaleEffect` | gutter colour = mode colour |
+| 11 | Presence | name tag pops at .92 | name tags pop from .55 (bouncy) and hold 3.6 s; a peer's caret arrives with a short grow (scaleY .3 → 1) | bouncy · glide | overlay label `.transition(.scale)` | "● Maya" in the status line |
+| 12 | Sync / remote change | 700 ms ring to 2.8× | the dot itself takes the hit (scale 1.9 → 1, bouncy), two rings ripple out (to 3.6×, 900 ms, 160 ms apart), the whole badge pulses (1.08) | bouncy · 900 ms | `.scaleEffect` + `Circle().stroke` rings | dot glyph flips 2 frames |
+| 13 | Toasts | fly 14 px | spring UP from below the status bar (y 44, scale .82, 16 % overshoot); the stack makes room with a glide FLIP; exit drops 14 px in 160 ms | bouncy · glide | `.transition(.move(edge: .bottom).combined(with: .scale(0.82)))` | status line message |
+| 14 | Palette | settle .96 | springs open from just above (scale .9, y −18); results ripple (first 10, 18 ms); the selection is a stretching slab | bouncy · glide | sheet `.scaleEffect(anchor: .top)`; `matchedGeometryEffect` selection | instant |
+| 15 | Hover card | scale .92 | GROWS out of the link (scale .3 × .2 from the link's x) with a tether nub that pops first | bouncy | popover `.scaleEffect(anchor: linkPoint)` | box draws |
+| 16 | Kanban | lift 1.035, flip 180 ms | lift 1.06 with lean up to 9° by velocity; neighbours make room on glide (overshoot); the drop BOUNCES into the slot | bouncy (drop) · glide (room) | `.scaleEffect(1.06)` + `.rotationEffect` from velocity; `.spring` reorder | reverse video at the cursor |
+| 17 | Canvas | nodes pop .92 at once | on open, nodes pop from .6 + 14 px, 28 ms apart (≤ 14 steps); edges draw after (620 ms) and arrow heads pop at the end; pan coasts (τ 260 ms); keyboard zoom eases (gentle) | bouncy · soft | `.scaleEffect` with `.delay(i*0.028)`; `trim(from:to:)` | instant |
+| 18 | Home | 2 blooms, 48 s drift, static to the pointer | 3 brighter blooms on a 26 s drift that lean AWAY from the pointer (parallax per depth); title, meta, actions and recents rise in turn | gentle · glide · soft | `TimelineView` + `MeshGradient`; `.onContinuousHover` parallax | none |
+| 19 | Book switch | — | the new book OPENS like a cover: the page swings in from its spine (rotateY −24° → 3° → 0, perspective) | 560 ms ease-out | `.rotation3DEffect(.degrees(-24), axis: (0,1,0), anchor: .leading)` | instant |
+| 20 | Books ⇄ files (Livros) | — | scope change: content arrives from another depth (1.1 / .88), the panel takes the hit (.94 / 1.03, bouncy) | gentle · bouncy | `.scaleEffect` + opacity | instant |
+
 ---
 
 ## 7. Performance and accessibility rules (hard)
@@ -221,14 +291,17 @@ Empty states keep the ambient light (the home), keep their keys visible, and hav
 1. **Compositor only** for anything that repeats or runs over 140 ms: `transform`, `opacity`, `filter` on small elements. Exceptions are allowed one element at a time for ≤ 320 ms: `clip-path` (zoom reveal), box-shadow or colour transitions on hover/focus, and SVG `stroke-dashoffset` (edge draw).
 2. **60/120 fps.** No layout reads inside animation loops; FLIP reads once, before the change. Large animated layers get `will-change: transform` and nothing else does.
 3. **Input never waits.** No `await` on an animation in a key handler. The DOM is final at once and the animation only decorates it. Keys typed mid-animation apply immediately. The typing path (editor) gets no new animation beyond the 80 ms caret glide and the breathing blink.
-4. **Reduce Motion** (the OS setting plus the app setting `data-motion="reduce"`): every animation and transition is off (a global kill-switch in `app.css`), JS helpers return early (`motionAllowed()`), View Transitions are skipped, and canvas inertia is off. State changes are instant and identical in meaning.
+4. **Reduce Motion** (the OS setting plus the app setting Movimento: reduzido → `data-motion="reduce"`): every animation and transition is off (a global kill-switch in `app.css`), JS helpers return early (`motionAllowed()`), View Transitions are skipped, and canvas inertia is off. State changes are instant and identical in meaning.
 5. **Hidden tab:** all CSS animations are paused.
 6. **Contrast:** §2.4 floors; focus is never shown by colour alone (ring and edge).
-7. **Budgets** (measured in headless Chromium, 1440 px): explorer open, pane focus, kanban drag and canvas pan hold p95 frame time ≤ 17.5 ms; CLS < 0.01; no new long task over 50 ms caused by motion.
+7. **Budgets** (measured in headless Chromium, 1440 px, `scripts/perf/motion-perf.mjs`): explorer open, cursor, folder travel, note open, pane focus/zoom, palette, kanban drag and canvas pan hold p95 frame time ≤ 17.5 ms; CLS < 0.01; no new long task over 50 ms caused by motion; typing latency (keydown → next frame) unchanged.
+8. **Motion level** (§6.1): `reduzido` is the old Reduce Motion; `suave` must keep every choreography readable with less travel.
 
 ---
 
 ## 8. Event → motion token map (porting table)
+
+v1 table. Where a row overlaps §6.10, §6.10 (motion v2) wins; the token names are the same, their numbers are §6.1's.
 
 | # | UI event | web implementation | token | Mac (SwiftUI) | TUI |
 |---|---|---|---|---|---|
