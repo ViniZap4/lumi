@@ -4,99 +4,94 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-lumi is a local-first, markdown-based note-taking system. **v2** is multi-tenant and collaborative: vaults are portable directories that can be local-only or bound to a self-hosted server with live Yjs CRDT sync. The filesystem (markdown + YAML frontmatter) remains the source of truth on disk; the server projects it through a CRDT for live collaboration. Five independent components live in this monorepo: a Go server (Fiber + Postgres + yrs cgo), a Svelte 5 web client, a Go TUI client, a SwiftUI Apple client, and a Svelte docs site.
+lumi is a local-first, markdown-based note-taking system. Notes live in **books** ("livros" in the pt-BR UI; `vault` in code and API). A book is a portable directory that is either local-only or bound to a self-hosted server with live Yjs CRDT sync. The filesystem (markdown + YAML frontmatter) stays the source of truth on disk; the server projects it through a CRDT for live collaboration. A client can hold accounts on many servers, and servers can federate books with each other.
 
-The full v2 spec lives at [`SPEC.md`](./SPEC.md) — vault model, data model, capability vocabulary, API surface, phased rollout.
+Five components live in this monorepo as git submodules: a Go server (Fiber + Postgres + yrs cgo) with an admin API, a Svelte 5 web client (plus a SvelteKit admin panel), a Go TUI, a SwiftUI Apple client, and a Svelte docs site.
+
+Specs and contracts (read before touching sync or books):
+- [`SPEC.md`](./SPEC.md): v2 vault model, data model, capabilities, API surface.
+- [`docs/CRDT-CLIENT-PROTOCOL.md`](./docs/CRDT-CLIENT-PROTOCOL.md): **normative** client protocol. It covers the join rules (never seed locally, join empty and wait for SyncStep2), ranged ops only, the 3-way `/diff` with `base_state`, WS tickets, offline replicas, `crdt_epoch` lineage (§12) and the conformance vectors. Its status table tracks what each server and client implements.
+- [`docs/SPEC-LIVROS.md`](./docs/SPEC-LIVROS.md): the books model. It covers the account key `(server_url, username)`, the shared `~/.config/lumi/books.yaml` (byte-identical between Apple and TUI), the SSE feed `GET /api/events`, `GET /api/vaults/:id/changes?after=N` and the 7-state sync status. It ends with the owner's decisions.
+- `server/docs/ADMIN.md` (pt-BR): admin API and `lpa_` tokens.
+- `deploy/README.md` (pt-BR): production deploy.
 
 ## Build & Run Commands
 
-### Full stack via Docker Compose
+### Full stack via Docker Compose (local)
 ```bash
 cp .env.example .env                       # edit POSTGRES_PASSWORD, LUMI_ADMIN_*
 git submodule update --init --recursive    # required for server cgo build
 docker compose up -d
 # Web UI: http://localhost:3000   API: http://localhost:8080
-# Rebuild web after changing LUMI_SERVER_URL: docker compose build web
 ```
 
 ### Server (Go 1.25, cgo yrs)
 ```bash
 cd server
-git submodule update --init --recursive    # pulls third_party/y-crdt
-make libyrs                                 # cargo build yffi static lib
-docker compose up -d postgres               # local Postgres
-make migrate                                # apply migrations
-make run                                    # http://localhost:8080
-# Tests
-make test                                   # unit
-make test-integration                       # testcontainers-go Postgres (target only — no integration-tagged suites yet)
-make smoke                                  # docker compose smoke
-# Subcommands
+make libyrs                                 # cargo build yffi static lib → internal/crdt/{lib,include} (gitignored)
+docker compose up -d postgres
+make migrate && make run                    # http://localhost:8080
+GOTOOLCHAIN=go1.25.5 go test ./...          # see "Local tooling" — newer Go can't link libyrs
+make test-integration                       # testcontainers (two-server federation suite), needs Docker
 go run ./cmd/lumi-server migrate up|down N|status
-go run ./cmd/lumi-server version
+go run ./cmd/lumi-server token create <name> [--ttl 90d]   # admin lpa_ token (CLI only)
+go run ./cmd/lumi-server token revoke <id>
 ```
 
-### TUI Client (Go 1.23+)
-```bash
-cd tui-client
-go build -o lumi
-./lumi                                      # vault picker if any vaults registered
-./lumi <dir>                                # open a local vault or markdown dir
-./lumi <file.md>                            # open a single note
-./lumi login <server-url>                   # sign in to a lumi-server v2
-./lumi accounts [--verify]                  # list signed-in servers
-./lumi vaults                               # list registered vaults
-./lumi vault link <path>                    # register dir as vault
-./lumi vault clone <url>/<slug> [<path>]    # pull a server vault locally
-./lumi vault unlink <slug>                  # remove from registry
-./lumi vault sync <slug>                    # snapshot+diff round-trip
-./lumi vault manage                         # interactive vault TUI
-```
-
-### Web Client (Svelte 5 + Vite 7)
+### Web client (Svelte 5 + Vite 7) and admin panel
 ```bash
 cd web-client
-npm install
-npm run dev                                 # http://localhost:5173
-npm run build                               # production build to dist/
-npm test                                    # vitest suites
+npm install && npm run dev                  # http://localhost:5173
+npm test                                    # vitest
+npm run build && npx svelte-check
+cd admin && npm install && npm run dev      # SvelteKit admin panel, :5174 (needs LUMI admin API + lpa_ token)
+npm test && npm run check && npm run build
 ```
 
-### Apple Client (SwiftUI, Swift 6)
+### TUI client (Go)
+```bash
+cd tui-client
+go build -o lumi . && ./lumi                # book picker / explorer
+./lumi login <server-url>                   # sign in (accounts keyed by server+username)
+./lumi accounts [--verify] | ./lumi vaults | ./lumi vault link|clone|unlink|sync|manage ...
+go test ./... && go vet ./...
+go test ./ui -update                        # regenerate golden renders in ui/testdata/golden
+```
+Tests must never touch the real `~/.config/lumi`: `ui/main_test.go` points HOME/XDG at a temp dir.
+
+### Apple client (SwiftUI, Swift 6)
 ```bash
 cd apple-client
-make bootstrap                              # installs xcodegen
-make open                                   # generates project + opens Xcode
-make test                                   # swift test
+make bootstrap                              # xcodegen
+make open                                   # generate project + open Xcode
+swift test                                  # LumiKit + LumiUI suites
+# Unsigned Release build for local install / release:
+xcodegen generate && xcodebuild -project Lumi.xcodeproj -scheme Lumi -configuration Release \
+  -destination 'generic/platform=macOS' -derivedDataPath <tmp> ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+  CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
 ```
+`xcodebuild -quiet` prints spurious "failed with exit code 0" lines; judge by `BUILD SUCCEEDED`. The generated `Lumi.xcodeproj` is not committed.
 
 ### Site (Svelte 5 + Tailwind 4)
 ```bash
-cd site
-npm install
-npm run dev                                 # http://localhost:5173
+cd site && npm install && npm run dev
 ```
 
 ## Architecture
 
 ```
-┌─────────────────┐  ┌──────────────┐  ┌──────────────────┐
-│   TUI Client    │  │  Web Client  │  │   Apple Client   │
-│ (Go + Bubbletea)│  │  (Svelte 5)  │  │    (SwiftUI)     │
-└────────┬────────┘  └──────┬───────┘  └────────┬─────────┘
-         │                  │                   │
-  snapshot+diff       Yjs WS + REST       Yjs WS + REST
-  REST sync           (live awareness)    (yswift + presence)
-         │                  │                   │
-         └──────────────────┼───────────────────┘
-                            │
-                  ┌─────────▼──────────┐
-                  │  lumi-server (v2)  │
-                  │  Fiber + cgo yrs   │
-                  └─────────┬──────────┘
-                            │
+┌─────────────────┐  ┌──────────────┐  ┌──────────────────┐  ┌──────────────┐
+│   TUI Client    │  │  Web Client  │  │   Apple Client   │  │ Admin panel  │
+│ (Go + Bubbletea)│  │  (Svelte 5)  │  │    (SwiftUI)     │  │ (SvelteKit   │
+└────────┬────────┘  └──────┬───────┘  └────────┬─────────┘  │  BFF, node)  │
+  3-way /diff REST    Yjs WS (ticket)     Yjs WS (ticket)     └──────┬───────┘
+  + SSE feed          + REST + SSE        + REST + SSE               │ /admin/v1
+         └──────────────────┼───────────────────┘                    │ (lpa_ token)
+                  ┌─────────▼──────────────────────────────────────────▼┐
+                  │  lumi-server: public API :8080 │ admin API :8081     │
+                  │  Fiber + cgo yrs, federation relay to other servers │
+                  └─────────┬────────────────────────────────────────────┘
               ┌─────────────┴────────────┐
-              │                          │
        ┌──────▼──────┐         ┌─────────▼─────────┐
        │  Postgres   │         │   Filesystem      │
        │ users/vaults│         │  <vault>/notes/   │
@@ -105,74 +100,122 @@ npm run dev                                 # http://localhost:5173
        └─────────────┘         └───────────────────┘
 ```
 
-### Vault model
-
-- A **vault** is a portable directory: notes + a `.lumi/` metadata folder.
-- Vaults are **local-only** or **server-bound**. Clients can track many vaults across many servers; each binding has its own account.
-- The server is **multi-tenant**: it hosts many vaults with per-vault custom roles. Identity is server-scoped (no central SSO).
-- **FS-CRDT contract**: external markdown edits are detected via fsnotify and diff-merged into the CRDT (`server/internal/fswatch`), then broadcast to live subscribers.
+### Books, sync and offline
+- **Accounts and books:** a client holds many accounts (one per `server_url` + `username`), each with many books. A federated book binds to its home server by default. Renaming a bound book renames it for everyone (needs `vault.manage`).
+- **Feed:** each account opens `GET /api/events` (SSE, Bearer only). Events are `hello`, `vault.head`, `vault.access`, `vault.updated`, `vault.revoked`, `session.ended` and `reconnect`, with a ping every 25 s. On a head change the client catches up with `/changes?after=N`; a `410 resync_required` means a full resync.
+- **Live editing (web, Apple):**
+  - `POST /api/vaults/:vault/notes/:id/ws-ticket` returns `{ticket, expires_at, crdt_epoch}`. The ticket is single-use, valid 30 s, and goes in the WS URL as `?ticket=`. `?token=` on the WS is deprecated.
+  - Every edit reaches Yjs as minimal ranged ops, never replace-all. Undo only reverts the user's own edits.
+- **Offline (web, Apple):**
+  - After the first SyncStep2, each note keeps a persisted replica: IndexedDB `lumi-offline` on the web, `Application Support/lumi/replicas/` on Apple. Replicas are keyed by server, account, vault and note.
+  - A cold offline open is editable, and edits merge on reconnect.
+  - "Pendente" tracks unsent edits. Sign-out, `session.ended` or `vault.revoked` wipes the replicas (LGPD) after offering an export.
+  - The web also has a service worker (`/sw.js`) that precaches the app shell and never `/api/`.
+- **Lineage:**
+  - `notes.crdt_epoch` (migration 0008) changes only when a note starts a new CRDT history: create, delete and recreate, init from file, or vault copy.
+  - Clients never merge a replica or base into a different epoch. The local text becomes a "<title> (conflito offline)" copy instead.
+  - `GET .../state-vector` is the cheap ack and lineage probe. Client close code 4409 means the lineage changed; 4401 `ticket_stale` means the epoch changed between minting the ticket and the upgrade.
+- **TUI:** uses REST only. It pushes with a 3-way `/diff` from a base stored in `<UserCacheDir>/lumi/books/<id>.bases/`, and checks the epoch before every push. Editing happens in `$EDITOR`.
+- **WS Origin:** a present `Origin` must be on `LUMI_ALLOWED_ORIGINS`. An absent `Origin` (native clients) is admitted and gated by the ticket. Don't route Origin checks through the WS library: it rejects an absent Origin.
 
 ### Auth
+- Sessions: `POST /api/auth/login` issues a session token. REST sends `X-Lumi-Token` (or Bearer). Sessions are stored hashed in Postgres, with bcrypt cost 12 and a 30-day TTL.
+- An account locks after 10 wrong passwords (`failed_logins`, `locked_until`). Admins can disable or unlock it.
+- First-boot bootstrap uses `LUMI_ADMIN_USERNAME` + `LUMI_ADMIN_PASSWORD` and only runs while the users table is empty. In production these are created for the first deploy and then deleted from the Gitea org secrets. After that, signup is by invite link.
+- Per-vault custom roles gate every mutation. Seed roles: Admin / Editor / Viewer / Commenter.
+- **Admin API:**
+  - It lives at `/admin/v1` on a separate listener (`LUMI_ADMIN_ADDR`), with `lpa_` tokens minted only via the CLI.
+  - The panel (`web-client/admin`, routes in pt-BR) is a BFF: the token stays server-side, and the browser holds the cookie `__Host-lumi_admin` (HttpOnly, SameSite=Strict, ≤12 h).
+  - The panel uses CSP nonces and an Origin check on every POST.
 
-- Session-based: `POST /api/auth/login` issues a session cookie + token; subsequent REST sends `X-Lumi-Token`, WebSocket sends `?token=`.
-- Sessions in Postgres, bcrypt cost 12, 30-day TTL.
-- First-boot bootstrap via `LUMI_ADMIN_USERNAME` + `LUMI_ADMIN_PASSWORD` (when users table is empty). Otherwise via invite-link signup.
-- Per-vault custom roles gate every mutation; seed roles: Admin / Editor / Viewer / Commenter.
+### Server layout (`server/`)
+- `cmd/lumi-server/`: entrypoint, env config, Fiber wiring, `migrate` and `token` subcommands.
+- `internal/auth`, `users`, `vaults`, `roles`, `members`, `invites`, `notes`, `audit`, `capguard`: domain services and handlers.
+- `internal/crdt`: yrs cgo wrapper, doc registry, snapshot/update persistence, `crdt_epoch` stamping.
+- `internal/wsync`: Yjs WebSocket hub, tickets, awareness, debounced FS mirror.
+- `internal/feed`: SSE feed and `/changes`.
+- `internal/federation`: server↔server relay, manifests and announces (they carry the epoch).
+- `internal/fswatch`: fsnotify, diff-merges external edits into the CRDT.
+- `internal/admin`: admin API.
+- `internal/storage/{fs,pg}` and `internal/domain`.
+- `migrations/`: up to `0008_crdt_epoch`.
+- `third_party/y-crdt/`: submodule, yrs v0.26.0.
 
-### Server (Go 1.25, Fiber, pgx/v5)
+### Web client (`web-client/src`)
+- **Views:** `App.svelte` (auth gate), `views/{LoginView,VaultsView,VaultHomeView}.svelte`; the settings view and modals are in `components/`.
+- **Books and sync:**
+  - `lib/accounts`, `books*`, `bookstatus.ts`: books and status. The status reducer shares `src/test/fixtures/bookstatus.cases.json` with the other clients.
+  - `sse.ts`, `feed.ts`, `sync.svelte.ts`: the feed and sync.
+- **Editor:**
+  - `editor-session.svelte.ts` and `editor-boot.ts`: the Yjs provider plus CodeMirror + `@replit/codemirror-vim`, lazy-loaded.
+  - `live-preview.ts`: Live Preview decorations.
+  - `vim-config.ts`, `vimrc.ts`: escape sequences, `.vimrc` safe-subset parser (never evaluated).
+  - `yank-flash.ts`, `editor-keys.ts`: yank highlight and editor key bindings.
+  - `link-helper.ts`: link helper.
+- **Offline:** `replica.ts`, `offline-store.ts`, `lineage.ts`, `ws-ticket.ts`.
+- **Navigation:**
+  - `shell-keymap.ts`, `miller.svelte.ts`, `notetree.ts`, `fileops.ts`: yazi-style explorer.
+  - `pane-nav.ts`, `preview-keys.ts`: Ctrl-hjkl panes and keyboard reading of the split preview.
+  - `legend.ts`, `hints.ts`, `palette.ts`, `context-actions.ts`: legend, hint mode, palette, context menu.
+- **Rendering:**
+  - `markdown.ts`: renderer, sanitized by DOMPurify. Only disabled checkbox inputs and allow-listed iframes survive.
+  - `scroll-sync.ts`: split preview.
+  - `app.css`: one shared prose stylesheet for reader, split preview and Live Preview.
+- CSP is set both in `index.html` and in `nginx.conf`; keep them identical.
 
-Layout (`server/`):
-- `cmd/lumi-server/` — binary entrypoint, env config, Fiber app wiring
-- `internal/auth/` — sessions, login, password hashing, middleware, bootstrap
-- `internal/users/`, `vaults/`, `roles/`, `members/`, `invites/`, `notes/`, `audit/` — domain services + handlers (each registers Fiber routes)
-- `internal/crdt/` — yrs cgo wrapper, doc registry, snapshot/update persistence
-- `internal/wsync/` — Yjs WebSocket hub, awareness fan-out, debounced FS mirror
-- `internal/fswatch/` — fsnotify watcher, diff-merges external edits into the CRDT
-- `internal/storage/fs/` — SafeJoin, atomic writes, vault.yaml
-- `internal/storage/pg/` — sqlc-generated queries
-- `internal/domain/` — canonical types, errors, capability vocabulary
-- `migrations/` — SQL migrations (golang-migrate)
-- `third_party/y-crdt/` — submodule pinned to yrs v0.26.0; `make libyrs` builds `libyrs.a` for cgo linking
+### TUI (`tui-client/`)
+- `main.go` dispatches the CLI subcommands; `cmd_*.go` hold the handlers.
+- `account/`, `books/`, `feed/`: accounts, books.yaml, SSE, lineage.
+- `ui/`: Bubbletea explorer with Miller columns, glamour/chroma prose preview, legend, palette and mouse; goldens in `ui/testdata/golden/`.
+- `theme/` has the same 12 themes as the web.
 
-### Web Client (Svelte 5 + TypeScript)
+### Apple client (`apple-client/`)
+- `Sources/LumiKit/`: platform-agnostic core.
+  - `Accounts`, `Books`, `Feed`, `Net`, `Sync`, `CRDT` (yswift), `Offline`: accounts, books, feed, network, sync, CRDT and offline replicas.
+  - `Explorer`: tree, Miller nav and shell keymap.
+  - `Vim`: full engine with registers, macros, dot-repeat, text objects, ex and the `.vimrc` port.
+  - `Preferences`.
+- `Sources/LumiUI/`: theme, TextKit 2 editor bridges (mode-shaped cursor overlay), markdown reader matching the web prose system.
+- `App/`: the `@main` app — the yazi shell, palette, legend, book settings sheet and split preview.
 
-- `src/App.svelte` — auth gate, vault selection, route to vault home
-- `src/lib/auth.svelte.ts` — session + token state
-- `src/lib/vaults.svelte.ts` — vault list + selection
-- `src/lib/vaultmembers.svelte.ts` — member/role admin
-- `src/lib/capabilities.ts` — capability matching
-- `src/lib/notes.svelte.ts` — note CRUD
-- `src/lib/editor-session.svelte.ts` — lazy-loaded Yjs + CodeMirror editor + vim; owns the y-websocket provider and awareness/presence (there is no separate `ws.ts`)
-- `src/lib/uistate.svelte.ts` — UI state ($state runes)
-- `src/lib/api.ts` — REST client (auth-aware)
-- `src/lib/markdown.ts` — markdown renderer (DOMPurify-sanitised)
-- `src/views/{LoginView,VaultsView,VaultHomeView}.svelte` — entry views
+### UX model (all clients)
+The clients are keyboard-first but mouse-friendly, with the same keymap everywhere. Changing a key in one client means changing it in all of them.
+- **Moving:** `j/k/h/l`, `gg/G`, counts, `/` filter with `n/N`, `H/L` history.
+- **Files:** `a` new (`dir/name` creates folders), `r` rename/move, `d` delete with an inline confirm, `y/p` duplicate.
+- **Note:** `i/e` edit, `q/Esc` back.
+- **App:**
+  - `space`/`:`/⌘K palette, `?` help, `[`/`]` switch books;
+  - `Ctrl-h/j/k/l` and `Ctrl-w` move between panes;
+  - `f`/`F` hint mode;
+  - `,` opens settings (`:settings` in the editor; ⌘, in the Mac app only).
+- **Legend:** a one-line command legend above the status line.
 
-CSP enforced via meta tag + nginx headers; suites under `*.test.ts` run via vitest.
+## Deploy, remotes and releases
 
-### TUI Client (Bubbletea / Elm)
+- **Remotes:**
+  - `origin` (GitHub, ViniZap4/*) is the main remote.
+  - `gitea` is the second remote: the private org `lumi` on the owner's Gitea, `ssh://git@192.168.68.54:2222/lumi/<repo>.git`, web at `http://100.66.72.35:3001`, `tea --login gitea`.
+  - Push every repo to both remotes. GitHub HTTPS pushes use `git -c credential.helper= -c credential.helper='!gh auth git-credential' push origin main`; don't change the global git config.
+- **Production:**
+  - Pushing the umbrella `main` to Gitea runs `.gitea/workflows/deploy.yml` on the runner `zima-runner`. It builds, backs up, then runs `docker compose -p lumi-prod up -d` from `deploy/compose.prod.yaml`.
+  - Each service sits behind a Tailscale sidecar (TS_USERSPACE, Serve on 443): web `https://lumi.taildfba5.ts.net`, API `https://lumi-api.taildfba5.ts.net`, admin panel `https://lumi-admin.taildfba5.ts.net`.
+  - Docs and `**/*.md` changes don't deploy.
+  - Gotcha: with TS_USERSPACE the sidecar forwards any tailnet connection to the container's `127.0.0.1`, so binding to loopback does not isolate anything. The owner accepted the tailnet-internal exposure.
+- **Releases:**
+  - Tag the umbrella repo (`vX.Y.Z`) and create the release on both GitHub (`gh release create`) and Gitea (`tea releases create --login gitea --repo lumi/lumi`) with the same assets: the universal macOS DMG and the TUI binaries (`CGO_ENABLED=0`, `-X main.Version=vX.Y.Z`) for darwin arm64/amd64, linux amd64/arm64 and windows amd64, plus `SHA256SUMS.txt`.
+  - Update the README Download section.
+  - The DMG is ad-hoc signed and not notarized.
 
-- Top-level CLI dispatch in `main.go`: subcommands `login`, `accounts`, `vaults`, `vault link|clone|unlink|sync|manage`. Default action is the vault picker or directory open.
-- `cmd_*.go` — subcommand handlers + tests
-- `account/` — accounts.yaml + vaults.yaml readers/writers, last-opened bumps
-- `sync/` — REST snapshot/diff client (no live CRDT — `$EDITOR` is opaque)
-- `ui/` — Bubbletea Model/Update/View, vim cursor, theme styles
-- `config/`, `theme/`, `editor/`, `image/`, `filesystem/`, `domain/` — as in v1
-- `cmd_vault_manage.go` — interactive vault TUI, hands off to main TUI via `syscall.Exec`
+## Local tooling (owner's Mac)
 
-### Apple Client (SwiftUI, Swift 6)
-
-- `Sources/LumiKit/` — platform-agnostic core: Domain, Filesystem, Network
-- `Sources/LumiUI/` — shared SwiftUI: theme, editor, markdown render
-- `App/` — `@main` app target with `AppState` + `RootView`
-- CRDT via [yswift](https://github.com/y-crdt/yswift) (Y.Doc actor wrapper)
-- Live awareness/presence with self-echo filter + reconnect-stable client ID
-- TextKit 2 native vim engine
-
-### Site (Svelte 5 + Tailwind 4)
-
-- SPA with path routing, 12 doc pages, 12-theme catalog, Vercel deploy
-- Doc pages and landing copy describe v2 (vaults / CRDT / multi-tenant)
+- **Disk space is low:**
+  - Always delete DerivedData, `.build`, `.swiftpm`, generated xcodeproj and temp worktrees after use.
+  - Don't install toolchains on the Mac itself; use Docker (colima) for anything heavy, then clean up.
+- **Server cgo tests:** use `GOTOOLCHAIN=go1.25.5`. Newer local Go fails to link `libyrs.a` (LTO bitcode). Worktrees need `internal/crdt/lib` and `include` copied from the main checkout.
+- **Docker:**
+  - Run colima with a temp `DOCKER_CONFIG` holding `{}`, plus `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`. The user's `~/.docker/config.json` has a stale `credsStore`.
+  - Cleanup: `docker system prune -af --volumes`, `colima delete -f`, and `rm -rf ~/.colima/_lima/_disks ~/Library/Caches/{colima,lima}`.
+- **Agents never launch GUI apps:** no `open`, osascript or input automation. It once stole the owner's keyboard focus. Visual checks use offscreen renders (Apple) or headless Playwright with a mock API (web).
 
 ## Note Format
 
@@ -189,29 +232,29 @@ tags:
 # Markdown content here
 ```
 
-Plain markdown files (no frontmatter) are accepted by both Go clients; on-disk format is preserved on save unless metadata is explicitly added through the UI.
+Plain markdown files (no frontmatter) are accepted. Saving preserves the on-disk format unless metadata is explicitly added through the UI. Rendered extensions shared by all clients:
+- `> [!note]` callouts (11 kinds, `+`/`-` foldable);
+- `- [ ]` tasks, toggled with a single-character ranged edit;
+- `==mark==`, footnotes and tables.
 
 ## Conventions
 
-- **Commit messages**: Conventional commits with module scope — `feat(server, notes): ...`, `fix(web, phase-4.x): ...`, `docs(...)`, `refactor(...)`. Push immediately after every commit.
-- **Go style**: `gofmt`/`goimports`, meaningful package names (`auth`, `crdt`, `wsync`, not `utils`), explicit error handling, `domain.ErrValidation` for input errors.
-- **Svelte style**: Svelte 5 runes (`$state`, `$derived`, `$effect`); one component per file; lazy-load heavy chunks (Yjs, CodeMirror) on first edit.
-- **Auth**: session token via `X-Lumi-Token` (REST) or `?token=` (WS). Per-vault capabilities checked at every handler.
-- **Tests**: server has unit tests + a docker-compose smoke script (the `make test-integration` testcontainers-go target exists, but no integration-tagged suites have landed yet); web client has vitest suites; TUI and Apple clients have their own unit suites. v1's "no automated tests" rule is superseded for security-critical and CRDT paths.
+- **Commit messages:** conventional commits with module scope, e.g. `feat(server, notes): ...`, `fix(web, editor): ...`, `docs(...)`, `chore(monorepo): bump ...`. Push immediately after every commit, to both remotes. After merging submodule work, bump the submodule pointers in the umbrella.
+- **Go style:** `gofmt`/`goimports`, meaningful package names, explicit error handling, `domain.ErrValidation` for input errors.
+- **Svelte style:** Svelte 5 runes; one component per file; lazy-load heavy chunks (Yjs, CodeMirror).
+- **Auth:** `X-Lumi-Token`/Bearer on REST and `?ticket=` on WS. Check per-vault capabilities in every handler.
+- **Tests:** required for security-critical and CRDT paths. The CRDT protocol's conformance vectors are shared across clients.
+- **Language:** UI copy and ops docs (deploy, admin) are pt-BR; code, comments and specs are English.
 - **Pillars** (applied to every decision): Security/LGPD → performance → DX → scale → UX → UI → QA.
 
 ## Submodules
 
-Each component is a separate repo linked as a git submodule:
-
 | Path | Repo |
 |------|------|
 | `server/` | `ViniZap4/lumi-server` |
-| `web-client/` | `ViniZap4/lumi-web` |
+| `web-client/` | `ViniZap4/lumi-web` (includes `admin/`) |
 | `tui-client/` | `ViniZap4/lumi-tui` |
 | `apple-client/` | `ViniZap4/lumi-apple` |
 | `site/` | `ViniZap4/lumi-site` |
 
-All components track `main` as of the v2 cutover (2026-05-28).
-
-Clone with submodules: `git clone --recurse-submodules`. The server has its own nested submodule (`third_party/y-crdt`) required for cgo; the `--recursive` flag covers it.
+All components track `main`. Clone with `git clone --recurse-submodules`. The server has its own nested submodule (`third_party/y-crdt`) that cgo needs.
