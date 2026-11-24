@@ -614,3 +614,13 @@ can still be CRDT-merged with the other side's old history on reconnect
 clients of either side refuse to merge their old replicas into it. That is
 the conservative outcome.
 
+## 13. Canvas notes and the note id rule
+
+Books may hold JSON Canvas 1.0 files (`.canvas`) next to markdown (SPEC-PARTE2 §6).
+
+- **Kind.** A note's kind is derived from its path: `.canvas` → `"canvas"`, otherwise `"markdown"`. Every note DTO (list, get, create, PATCH), every `/changes` entry and `/content` carry `"kind"`. Create a canvas with `POST /api/vaults/:vault/notes {"title","kind":"canvas","body"?}`; an empty body becomes `{"nodes":[],"edges":[]}\n`.
+- **Id rule.** Markdown: id = slug of the title (`[a-z0-9-]`, `-2`, `-3`… on collision), path `<id>.md`. Canvas: id = `<slug>.canvas`, path the same. Slugs never contain a dot, so the id spaces are disjoint: `a.md` and `a.canvas` are the notes `a` and `a.canvas`. Ids never change; a move changes only the path. A create also skips a slug whose path is already taken.
+- **No frontmatter.** The file is the raw JSON, and the CRDT `Y.Text` `content` holds that same JSON. `/content` returns `frontmatter: {}` and the JSON as `body`. The debounced mirror writes the text verbatim; the FS watcher diff-merges external edits of the file the same way as markdown.
+- **Validation.** JSON validity is checked only on create. Live edits, `/diff`, `/update` and PATCH body are not checked, because a client may be mid-edit; renderers MUST tolerate invalid JSON (keep the last good parse). Every note body must be valid UTF-8 and at most 4 MiB; the FS watcher skips files that are not.
+- **Title and moves.** A canvas title is its file name without `.canvas`. PATCH `title`/`tags` on a canvas is 400; rename by moving (`PATCH {"path":"dir/New name.canvas"}`). A move may not change the kind (`.md` ↔ `.canvas` is 400), including federation moves.
+- **Edits.** §3 applies unchanged: rewrite only the changed JSON span, or the minimal common-prefix/suffix range; never delete-all + insert-all.

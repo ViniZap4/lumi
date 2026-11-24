@@ -11,6 +11,7 @@ Five components live in this monorepo as git submodules: a Go server (Fiber + Po
 Specs and contracts (read before touching sync or books):
 - [`SPEC.md`](./SPEC.md): v2 vault model, data model, capabilities, API surface.
 - [`docs/CRDT-CLIENT-PROTOCOL.md`](./docs/CRDT-CLIENT-PROTOCOL.md): **normative** client protocol. It covers the join rules (never seed locally, join empty and wait for SyncStep2), ranged ops only, the 3-way `/diff` with `base_state`, WS tickets, offline replicas, `crdt_epoch` lineage (§12) and the conformance vectors. Its status table tracks what each server and client implements.
+- [`docs/SPEC-PARTE2.md`](./docs/SPEC-PARTE2.md): part 2 UX and format contract (floating explorer, note splits, hover preview, Kanban, JSON Canvas, `lumi://` + `lumi open`, admin user login).
 - [`docs/SPEC-LIVROS.md`](./docs/SPEC-LIVROS.md): the books model. It covers the account key `(server_url, username)`, the shared `~/.config/lumi/books.yaml` (byte-identical between Apple and TUI), the SSE feed `GET /api/events`, `GET /api/vaults/:id/changes?after=N` and the 7-state sync status. It ends with the owner's decisions.
 - `server/docs/ADMIN.md` (pt-BR): admin API and `lpa_` tokens.
 - `deploy/README.md` (pt-BR): production deploy.
@@ -36,6 +37,7 @@ make test-integration                       # testcontainers (two-server federat
 go run ./cmd/lumi-server migrate up|down N|status
 go run ./cmd/lumi-server token create <name> [--ttl 90d]   # admin lpa_ token (CLI only)
 go run ./cmd/lumi-server token revoke <id>
+go run ./cmd/lumi-server admin grant|revoke|list <user>   # server_admin flag: panel username+password login (lps_ sessions, 12 h)
 ```
 
 ### Web client (Svelte 5 + Vite 7) and admin panel
@@ -138,7 +140,7 @@ cd site && npm install && npm run dev
 - `internal/fswatch`: fsnotify, diff-merges external edits into the CRDT.
 - `internal/admin`: admin API.
 - `internal/storage/{fs,pg}` and `internal/domain`.
-- `migrations/`: up to `0008_crdt_epoch`.
+- `migrations/`: up to `0009_admin_login` (server_admin flag, admin sessions).
 - `third_party/y-crdt/`: submodule, yrs v0.26.0.
 
 ### Web client (`web-client/src`)

@@ -108,24 +108,38 @@ Painel web (`web-client/admin`, SvelteKit com servidor Node) para a API de admin
 do servidor (`server/docs/ADMIN.md`): visão geral, usuários, sessões, cofres, federações,
 tokens e auditoria. Mesmo desenho do painel do porvia (ADR 0037 de lá).
 
-### Primeiro token e entrada
-Tokens de admin (`lpa_…`) só nascem no terminal, nunca pela API. No servidor de casa
-(ZimaOS), em qualquer pasta:
+### Primeiro acesso
+O painel aceita duas formas de entrar:
 
-```sh
-docker compose -p lumi-prod exec server /lumi-server token create painel
-# validade padrão de 30 dias; para outra: ... token create painel --ttl 7d
-```
+- **Usuário e senha (padrão).** Contas marcadas como administradoras do servidor
+  (`server_admin`) entram com o próprio usuário e senha. O admin criado no primeiro boot
+  (`LUMI_ADMIN_USERNAME`) já é administrador. Num servidor que já existia antes da
+  migração 0009, o boot marca esse admin se a senha dele ainda for `LUMI_ADMIN_PASSWORD`;
+  senão, ou para outras contas:
+  ```sh
+  docker compose -p lumi-prod exec server /lumi-server admin grant <usuário>
+  docker compose -p lumi-prod exec server /lumi-server admin list
+  docker compose -p lumi-prod exec server /lumi-server admin revoke <usuário>   # recusa o último
+  ```
+  Abra `https://lumi-admin.<tailnet>.ts.net` (de um aparelho da tailnet), aba **Usuário**.
+  Vale o mesmo limite e bloqueio do login do app (10 senhas erradas bloqueiam a conta por
+  um tempo; `user unlock <usuário>` libera). A sessão (`lps_…`) dura até 12 h e
+  **"Sair" a revoga no servidor**. Perder a marca, ser desativado ou trocar a senha
+  encerra as sessões de admin da conta na hora.
+- **Token (`lpa_…`).** Para scripts ou quando nenhuma conta for admin. Só nasce no terminal:
+  ```sh
+  docker compose -p lumi-prod exec server /lumi-server token create painel
+  # validade padrão de 30 dias; para outra: ... token create painel --ttl 7d
+  ```
+  O token sai **uma única vez** no stdout; cole na aba **Token**. "Sair" encerra só a
+  sessão do painel, não o token.
 
-O token sai **uma única vez** no stdout. Abra `https://lumi-admin.<tailnet>.ts.net`
-(de um aparelho da tailnet), cole o token e entre. Guarde-o num gerenciador de senhas
-ou descarte-o: dá para criar outro a qualquer hora.
-
-- O painel confere o token na API e o guarda **só na memória do processo do painel**;
+- Nos dois casos o painel guarda a credencial **só na memória do processo do painel**;
   o navegador recebe apenas um cookie de sessão aleatório (`__Host-lumi_admin`,
   HttpOnly, Secure, SameSite=Strict, 12 h no máximo). Reiniciar o contêiner `admin`
-  (ou um deploy) desloga todo mundo; é só entrar de novo com o token.
-- "Sair" encerra a sessão do painel, não o token.
+  (ou um deploy) desloga todo mundo.
+- As sessões abertas com usuário e senha aparecem na página **Tokens** (tipo "sessão",
+  com a conta) e podem ser encerradas ali ou com `token revoke <id>`.
 - Ações destrutivas pedem digitar o nome do alvo; apagar um usuário dono de cofres pede
   uma segunda confirmação com a lista dos cofres que vão junto.
 
@@ -138,7 +152,7 @@ ou descarte-o: dá para criar outro a qualquer hora.
   docker compose -p lumi-prod exec server /lumi-server token revoke <id>
   ```
   A revogação vale na próxima chamada: o painel recebe `401` e encerra a sessão.
-- Tudo que o painel muda fica na auditoria (`admin.*`, com o nome do token e o IP do
+- Tudo que o painel muda fica na auditoria (`admin.*`, com o token ou a sessão usada e o IP do
   aparelho), visível na página **Auditoria** e no log do servidor (`component=admin`).
 
 ### Exposição (sem ilusão de isolamento)
