@@ -1906,4 +1906,5 @@ Each question lists the **recommended option first**.
 - **D2 TUI in v1:** (a) locked — sealed books listed with 🔒, not openable; full support later (S6).
 - **D3 Metadata:** (a) encrypt note paths, titles and the book name (random note ids, encrypted meta envelopes).
 - **D6 Public mirrors:** (a) only as publish mirrors, with owner consent, default scope `publish: true` notes, filtered at home, off unless the mirror operator enables it.
+- **Sealing is optional** (owner): each book is plain by default. Sealing is an explicit per-book choice made at creation, or by converting an existing book. Plain books keep every feature (disk mirror, fswatch, search, TUI editing).
 - D4, D5, D7–D15: pending owner confirmation; the recommended options (a) are the working assumption.
