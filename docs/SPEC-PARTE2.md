@@ -76,6 +76,16 @@ Status: draft, 2026-11-24. Applies to web, Apple (macOS first) and TUI. The owne
 - External links show a URL card only, with no fetch.
 - Content always goes through the shared sanitizer.
 
+## 5a. Modes for structured notes (owner, 2026-11-24)
+
+Kanban and canvas notes have three modes, like markdown notes: **Reading | Edit | Source**.
+- **Reading is the default** when a note opens.
+  - It is read-only: you can navigate, pan/zoom, scroll, follow links (`Enter`/`gf`, `Ctrl-w f`), use `K` hover cards and hint mode `f`, and focus cards/nodes with `Tab`/`j/k`. There is no drag, no move, no delete.
+  - Kanban task checkboxes are not toggled in Reading (consistent with "nothing changes by accident").
+- **Edit** is today's interactive Board / Canvas. Enter it with `i`/`e`, ⌘/Ctrl-E or the switch; `Esc`/`q` (with nothing selected) returns to Reading.
+- **Source** is the raw markdown/JSON in the vim editor.
+- The mode switch uses the same segmented control and keys as markdown (Reading | Live | Source ↔ Reading | Edit | Source). The last mode per note kind is remembered per device, but opening always starts in Reading unless the user changed the "open notes in" setting.
+
 ## 5. Kanban (Obsidian Kanban compatible)
 
 - A note whose frontmatter has `kanban-plugin: board` (or `basic`) is a board. Each `## Heading` is a column, and each list item `- [ ] card text` / `- [x] …` under it is a card. Nested lines belong to the card.
