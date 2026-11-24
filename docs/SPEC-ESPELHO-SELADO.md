@@ -1,6 +1,6 @@
 # One-way mirrors and sealed (end-to-end encrypted) books
 
-- Status: proposed design (SPEC-PARTE2 §11). Nothing here is implemented.
+- Status: M0 and M1 implemented in lumi-server (2026-11-24); M2, M3 and Part B are proposed design.
 - Date: 2026-11-24
 - Scope: (A) one-way server-to-server mirrors of a book; (B) sealed books, where
   the server stores and relays only ciphertext; (C) phased plan and the
@@ -1899,6 +1899,25 @@ Each question lists the **recommended option first**.
     - (a) **No: sealed books are single-server until S5 (mirrors of sealed
       books also land in S5).**
     - (b) Ship federation together with S3.
+
+## Implementation notes (server, M0–M1)
+- G3 is closed for replica links too, not only mirrors. Home enforces a per-link capability ceiling: the union of the roles its control state grants to `user@<follower>`. Refused frames are dropped and audited as `federation.peer_denied`.
+- G2:
+  - Tombstones carry `crdt_epoch` (migration 0010).
+  - Home answers a re-announce of a note it deleted with a delete, and a follower sends the deletes it made offline.
+  - Replicas are not covered past tombstone retention (30 days).
+- Protocol v2 is negotiated: `?proto=2` on the relay WS, and a trailing version after the manifest's epoch list. Frames 8–11 go only to v2 peers.
+- Migration 0010:
+  - It turns `federation_control_state.state` into BYTEA, because JSONB broke the signature on every reconnect (a production bug; stored rows self-heal by re-signing).
+  - It adds `paused_at`, `resync_requested_at` and `promoted_at`.
+  - `publish_settings` moves to the M3 migration.
+- Clients: `GET /api/vaults` reports `federation.role = "mirror"`, `federation.mode` and `"mirror": true`.
+- Done ahead of M2: windowed backfill, mirrorAck/changesEnd, lag and pending_deletes, admin pause/resume/resync, and CLI promote.
+- Still M2:
+  - resumeFrom, backfill_cursor;
+  - divergence detection, the integrity pass;
+  - a read-only live WS, metrics, the erasure SLA alert;
+  - `/api/federation/unlinked`, manifest paging, single-note resync.
 
 ## Owner decisions (2026-11-24)
 

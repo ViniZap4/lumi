@@ -56,6 +56,8 @@ Campos comuns: `server_url`, `username`, `user_id`, `display_name`, `added_at` e
 |---|---|---|
 | **Apple** | `UserDefaults['lumi.accounts.v1']` (JSON) | Keychain. `service = com.vinizap.lumi.auth`, `account = "<server_url>#<username>"`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`: o feed continua com a tela bloqueada, mas o token não vai para backup nem para o iCloud Keychain. |
 | **TUI** | `~/.config/lumi/accounts.yaml`, agora com `version: 2` | Na mesma linha, `token:`. O arquivo é 0600, o diretório 0700 e a escrita é atômica, como já é hoje. |
+
+No macOS, o registro e os tokens seguem o §8.
 | **Web** | IndexedDB `lumi`, store `accounts` | Cifrado com AES-GCM por uma `CryptoKey` **não extraível**, gerada uma vez por navegador e guardada na store `keys` (`device-key`). |
 
 **Ameaças no web, sem rodeios.** A chave não extraível impede que o token apareça em claro numa cópia do `localStorage`, num dump de devtools, numa extensão que só lê o storage ou num log. Ela **não protege contra XSS**: um script na página pode chamar `decrypt`. Também não protege contra uma cópia do perfil inteiro aberta em outro navegador. A proteção real vem de outro lugar: CSP estrita (`script-src 'self'`), nenhuma dependência carregada em runtime, TTL deslizante do servidor, revogação e o botão "Sair deste aparelho". O formulário de login tem "Lembrar neste aparelho", ligado por padrão. Desligado, o token fica só em memória. A chave fixa de `crypto.ts` sai do código.
@@ -376,3 +378,140 @@ Tudo segue a linguagem visual atual: monoespaçada, rótulos em minúsculas, `li
 - Web, "Lembrar neste aparelho": **desmarcado por padrão** (sessão só na aba; com a opção marcada, token no IndexedDB).
 - Renomear livro ligado: renomeia para todos (exige `vault.manage`), sem apelido local.
 - Painel de administração do servidor: fica para a **onda 3**, no modelo do porvia (ADR 0037).
+
+## 8. Login compartilhado entre o app e o TUI no Mac
+
+- Status: decidido (24/11/2026). Pedido do dono: "o sistema de login e server pode ser o mesmo do mac instalado e o tui".
+- Substitui, no macOS, as linhas Apple e TUI da tabela do §2.2. Linux e Windows seguem o mesmo arquivo de registro; só o lugar do token do TUI muda (§8.3).
+
+### 8.1 Decisão
+
+1. **Um registro de contas só**, `~/.config/lumi/accounts.yaml` `version: 3`, lido e escrito pelo app e pelo TUI. Ele **não guarda segredo**. Entrar, sair, adicionar ou remover uma conta num cliente aparece no outro em menos de 1 s (o app observa o diretório; o TUI confere o arquivo a cada 1 s enquanto está aberto e em todo comando).
+2. **Uma sessão por cliente, não um token compartilhado.** O app guarda o seu token no Keychain (como hoje). O TUI guarda o seu em `~/.config/lumi/tokens.yaml` (0600). Quando um cliente vê no registro uma conta para a qual não tem sessão, ele pede ao outro um **link de aparelho** (§8.4): o cliente que tem sessão pede ao servidor um código de uso único, ligado a um desafio PKCE do cliente que pede, e o cliente que pede troca o código por uma **sessão nova, própria e revogável**. A senha é digitada uma vez só, em qualquer um dos dois.
+3. **Quem confirma.** Se quem tem a sessão é o TUI, ele atende o pedido do app sem perguntar. Se quem tem a sessão é o app, ele **sempre pergunta** ("O lumi no Terminal quer entrar como alice em lumi.work.com. [Permitir] [Não permitir]"). O motivo está em §8.2.
+4. **Sair.** "Sair deste app" encerra só a sessão daquele cliente. "Sair neste Mac" encerra a sessão dele **e todas as sessões ligadas a ela** no servidor (`POST /api/auth/logout` com `{"scope":"device"}`), e marca `signed_out_at` no registro para o outro cliente apagar o próprio token mesmo que as sessões não estejam ligadas. "Remover conta" faz o mesmo que "Sair neste Mac" e tira a linha do registro.
+
+### 8.2 Por que não compartilhar o token pelo Keychain
+
+Os dois binários são assinados ad hoc: `/Applications/Lumi.app` e `~/.local/bin/lumi`, recompilados com frequência.
+
+- **(a) Um item do Keychain com ACL para os dois caminhos.** No Keychain de login (o "file-based", o único que um binário sem team id usa), a ACL e a partition list guardam o *designated requirement* de cada app. Num binário ad hoc, o DR é o `cdhash`, que muda a cada build. Depois de cada recompilação o macOS pergunta de novo ("lumi quer usar informações confidenciais…", às vezes pedindo a senha de login). Isso treina o usuário a clicar "Sempre permitir", e é o oposto de segurança. O atalho de ler o item via `/usr/bin/security` coloca na ACL um binário da Apple que qualquer processo pode chamar, o que equivale a não ter ACL.
+- **(b) Access group compartilhado.** Exige o Keychain de proteção de dados (`kSecUseDataProtectionKeychain`) e o entitlement `keychain-access-groups`/`application-identifier`, que só valem com um team id e um provisioning profile. Assinatura ad hoc não tem team id, e uma ferramenta de linha de comando fora de um bundle não carrega provisioning profile. Fica para quando houver Developer ID; mesmo então, (d) continua melhor porque cada cliente fica revogável sozinho.
+- **(c) O TUI pede o token ao app por XPC ou URL.** URL scheme abre e traz o app para a frente. Um serviço XPC/Mach precisa de registro no launchd e de validar quem chama pela assinatura, que no ad hoc não identifica nada. E o resultado seria o mesmo token nos dois lugares: revogar um derruba o outro, e o segredo do Keychain passa a morar num arquivo.
+- **(d) Link de aparelho (escolhida).** Nenhum segredo atravessa de um cliente para o outro. O que passa pelo disco é um código de uso único, válido por 120 s, que **só funciona com o verificador PKCE que nunca sai da memória de quem pediu**. Cada cliente tem a própria sessão, com o próprio TTL deslizante, e pode sair sozinho. Não há prompt do Keychain além dos que o app já tem hoje.
+
+**Por que o app pergunta e o TUI não.** Qualquer processo do mesmo usuário consegue escrever na pasta de pedidos. Se o app atendesse sozinho, qualquer programa do usuário ganharia uma sessão nova a qualquer momento, e a proteção do Keychain deixaria de valer. Já o token do TUI mora num arquivo 0600 que esse mesmo programa consegue ler, então o TUI atender sozinho não abre nada que já não estivesse aberto. Pelo mesmo motivo o app não "empurra" sessão para o TUI: o TUI pede, e o app confirma uma vez.
+
+### 8.3 Arquivos
+
+**`~/.config/lumi/accounts.yaml` v3** (0600, diretório 0700). Formato canônico, com bytes iguais no Swift e no Go, testado contra `fixtures/accounts/accounts.v3.yaml`:
+
+```yaml
+# ~/.config/lumi/accounts.yaml — lumi account registry, no secrets. Format: SPEC-LIVROS §8.3.
+version: 3
+accounts:
+  - server: "https://lumi.work.com"
+    username: "alice"
+    user_id: 0192f7a1-3b4c-7d5e-8f60-718293a4b5c6
+    display_name: "Alice"
+    web_origin: "https://notes.work.com"
+    added_at: 2026-11-20T08:30:00Z
+    expires_at: 2026-12-20T08:30:00Z
+    signed_out_at: null
+```
+
+- Ordem das chaves fixa (a acima). Contas ordenadas por `added_at`, depois `server`, depois `username` (bytes). `accounts: []` quando vazio.
+- `server`, `username`, `display_name`: sempre entre aspas duplas (`display_name` pode ser `""`). `web_origin`: aspas ou `null`. `user_id`: sem aspas quando é UUID canônico em minúsculas, entre aspas quando não é, `null` quando vazio. Datas em UTC com segundos e `Z`, ou `null`. Escape, LF e linha final iguais ao §2.3.
+- A chave YAML continua `server` (é o `server_url` do §2.2). Um TUI antigo que regravar o arquivo mantém a URL de cada conta. No máximo ele põe de volta um `token:`, que o próximo load v3 tira dali.
+- `username` em minúsculas, sem espaços. `server` normalizado (§2.1). Linhas duplicadas: fica a de `added_at` mais recente; empate, a última do arquivo.
+- `expires_at` é a última validade conhecida de qualquer cliente, só para a UI. `signed_out_at` diz "toda sessão deste Mac anterior a este instante está encerrada". Entrar de novo não apaga o campo: a sessão nova é mais recente que ele.
+- O leitor é tolerante (comentários, CRLF, BOM, aspas simples, escalares sem aspas, `~`, frações de segundo, fuso). Um arquivo com `version` maior que 3 é só leitura.
+
+**Escrita concorrente.** Toda escrita é ler, mudar e gravar sob `flock(LOCK_EX)` no arquivo irmão `accounts.yaml.lock` (0600): trava, relê do disco, aplica a mudança, grava num temporário 0600 no mesmo diretório, faz `fsync`, `rename` e destrava. A leitura não trava, porque o `rename` é atômico. Nenhum dos dois usa `NSFileCoordinator` neste arquivo. No Windows, onde não há `flock`, o TUI usa um lockfile com `O_EXCL` e expiração de 10 s.
+
+**Tokens do TUI: `~/.config/lumi/tokens.yaml`** (0600, só o TUI lê e escreve, com o próprio lock):
+
+```yaml
+version: 1
+tokens:
+  - server: https://lumi.work.com
+    username: alice
+    token: "…"
+    expires_at: 2026-12-20T08:30:00Z
+    signed_in_at: 2026-11-20T08:30:00Z
+opt_out: []        # contas em que o usuário saiu só do TUI: não pedir link sozinho
+```
+
+No macOS o TUI continua num arquivo 0600, e não no Keychain, pelo motivo de (a): cada recompilação geraria um prompt. Quando o TUI tiver assinatura estável, ele pode passar a usar um item próprio no Keychain sem mudar mais nada daqui. No Linux e no Windows é o mesmo arquivo; não há regressão em relação ao `accounts.yaml` v2.
+
+**Token do app:** Keychain, como no §2.2 (`service = com.vinizap.lumi.auth`, `account = "<server>#<username>"`, `AfterFirstUnlockThisDeviceOnly`). O instante de entrada fica em `UserDefaults['lumi.accounts.signedInAt.v1']`, e as contas em que o usuário saiu só do app em `UserDefaults['lumi.accounts.linkOptOut.v1']`.
+
+### 8.4 Link de aparelho
+
+**Servidor.**
+
+```
+POST /api/auth/device-links            (autenticado)
+{"challenge": "<base64url sem padding de SHA-256(verifier), 43 chars>", "label": "lumi TUI"}
+→ 201 {"code": "<64 hex>", "expires_at": "…"}
+
+POST /api/auth/device-links/redeem     (público)
+{"code": "…", "verifier": "<43–128 chars base64url>", "label": "Lumi.app"}
+→ 200 {"token": "…", "expires_at": "…", "user": {…}}     (mesmo corpo do login)
+→ 401 {"error": "invalid_link"}                           (código desconhecido, usado, vencido, verificador errado ou sessão emissora encerrada)
+
+POST /api/auth/logout                  (autenticado)
+{"scope": "device"}  → 204   (sem corpo, ou "session": só a sessão atual, como hoje)
+```
+
+- Migração `0011_device_links`: `device_link_codes(code_hash PK, user_id, issuer_token_hash → sessions ON DELETE CASCADE, challenge, label, created_at, expires_at)` e `session_links(token_hash PK → sessions ON DELETE CASCADE, link_group, created_at)`. O código vale 120 s, guarda só o SHA-256 e é consumido na primeira tentativa, mesmo quando o verificador está errado. Se a sessão que emitiu o código acaba, o código acaba junto.
+- O resgate cria a sessão nova e põe a emissora e a nova no mesmo `link_group`. `scope=device` apaga a sessão atual e todas as do grupo, sempre do mesmo usuário.
+- Limites: 10 emissões por minuto por usuário e 30 resgates por minuto por IP. Auditoria: `auth.device_link_issue`, `auth.device_link_redeem`, `auth.device_link_failed` e `auth.logout_device`, com o `label` e sem código ou token.
+
+**Canal local:** `~/.config/lumi/link/` (0700; arquivos 0600, escrita atômica). Os nomes de cliente são `apple` e `tui`.
+
+| Arquivo | Quem escreve | Conteúdo |
+|---|---|---|
+| `<cliente>.alive` | o próprio cliente, enquanto roda (o app sempre, o TUI só na tela interativa) | `{"v":1,"pid":123,"started_at":"…"}` |
+| `req-<id>.json` | quem pede | `{"v":1,"id":"<uuid>","from":"tui","to":"apple","server":"…","username":"alice","challenge":"…","label":"…","pid":123,"created_at":"…"}` |
+| `resp-<id>.json` | quem tem a sessão | `{"v":1,"id":"…","code":"…","expires_at":"…"}` ou `{"v":1,"id":"…","error":"denied"\|"no_session"\|"failed"}` |
+
+Fluxo:
+
+1. Quem pede gera um `verifier` com 32 bytes aleatórios, que **fica só na memória**, e grava o `req`.
+2. Quem tem a sessão vê o `req` (o app observa o diretório; o TUI confere ao abrir, a cada 1 s na tela interativa e depois de todo `lumi login`). Ele confere `v`, `to`, se a conta está no registro, o formato do `challenge` e a idade do pedido: até 5 min, ou mais se o `pid` de quem pediu ainda está vivo. Depois atende (TUI) ou pergunta (app), chama `POST /device-links` e grava o `resp`.
+3. Quem pede lê o `resp`, resgata o código com o `verifier`, guarda o token no próprio armazenamento e apaga `req` e `resp`.
+
+Um código lido do disco por outro processo não serve para nada sem o verificador. Pedido negado vira `opt_out` de quem pediu e não se repete sozinho.
+
+**Quando cada cliente pede.**
+- **TUI:** ao abrir a tela interativa e em todo comando que precisa de uma conta sem token. Só pede se o app está vivo (`apple.alive` com `pid` vivo) e a conta não está em `opt_out`. No terminal aparece "Aprove no Lumi.app… (Ctrl-C cancela)", com espera de até 120 s. `lumi accounts link [<server>] [--account u]` pede de forma explícita e limpa o `opt_out`.
+- **Rótulo:** o código emitido leva o `label` do pedido; o resgate leva o rótulo de quem resgata (`lumi TUI` ou `Lumi.app`).
+- **App:** pede para toda conta do registro sem token no Keychain que não está em `linkOptOut`. O pedido fica valendo enquanto o app roda e é atendido na próxima vez que o TUI abrir. A conta aparece como "Precisa entrar — ou abra o lumi no Terminal para ligar".
+
+### 8.5 Propagação
+
+| Ação num cliente | Registro | Servidor | O outro cliente |
+|---|---|---|---|
+| Entrar com senha | upsert da linha | sessão nova | vê a conta; se não tem sessão, pede link |
+| Ligar por link | upsert da linha | sessão nova no mesmo `link_group` | — |
+| Sair deste app | nada | revoga a própria sessão | continua conectado |
+| Sair neste Mac | `signed_out_at = agora` | `logout {scope: device}` | apaga o próprio token se o seu `signed_in_at`, truncado ao segundo, não for posterior a `signed_out_at` (uma entrada no mesmo segundo perde), e chama `logout` por garantia |
+| Remover conta | linha removida | `logout {scope: device}` | linha sumiu → apaga o token e chama `logout` |
+| 401 / `session.ended` | nada | — | não muda |
+
+### 8.6 Migração
+
+| De | Para | Como |
+|---|---|---|
+| TUI `accounts.yaml` v1/v2 (com `token:`) | `tokens.yaml` + `accounts.yaml` v3 | Sob os dois locks: grava `tokens.yaml` primeiro, depois o registro v3. Uma queda no meio deixa o token duplicado, mas nunca o perde. |
+| Apple `UserDefaults['lumi.accounts.v1']` | `accounts.yaml` v3 | Faz o merge das linhas que faltam no registro e só apaga a chave depois de gravar. O Keychain não muda (mesmo `service`/`account`). |
+| `accounts.yaml` v1/v2 encontrado pelo app | `accounts.v2.yaml` + v3 | O app **não lê nem copia tokens**. Ele renomeia o arquivo para `accounts.v2.yaml` (0600), grava o v3 com as mesmas linhas e mais as suas. O TUI importa os tokens de `accounts.v2.yaml` para `tokens.yaml` e apaga o arquivo. |
+
+### 8.7 Testes
+
+- Go e Swift: golden byte a byte de `accounts.v3.yaml`; normalização de `accounts.v3.noncanonical.yaml`; leitura de `accounts.v2.yaml` (saída do yaml.v3) igual a `accounts.v2.migrated.yaml`; dois escritores concorrentes (processos ou goroutines/threads) sem perder linha; 0600 depois de toda escrita.
+- Fixtures de pedido e resposta em `fixtures/accounts/link-*.json`, decodificados pelos dois lados.
+- Servidor: emitir, resgatar, código reusado, vencido, verificador errado (queima o código), sessão emissora encerrada, `scope=device` revoga só o grupo, `scope` ausente segue como hoje.
+- TUI: `httptest` com emissão e resgate de ponta a ponta através do canal local, propagação de `signed_out_at` e de linha removida, migração v2 → v3 e importação de `accounts.v2.yaml`.
+- Apple: `TokenStore` injetado (nunca o Keychain real), `HOME` e `UserDefaults` temporários, propagação de saída e migração do `UserDefaults`.

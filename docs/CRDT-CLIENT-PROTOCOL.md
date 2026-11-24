@@ -200,6 +200,7 @@ lastServerSV)), origin}`. After a 2xx it sets `lastServerSV` to the returned
 - **Fatal closes**: stop reconnecting (provider `disconnect()`) on:
   - `4401`: auth invalid or expired. Clear the session and route to login.
   - `4403`: capability missing. Show a read-only state.
+    On a mirror vault every write and ws-ticket answers 403 `{"error":"mirror_read_only"}`, and the vault reports `"mirror": true`. Show "Espelho de <home> · somente leitura" and read through REST and the feed.
   - `4404`: note deleted.
   - `1008`: policy, the per-user concurrent-socket cap (10).
   - `4409`: **client-side only**, never sent by the server. The client
@@ -613,6 +614,8 @@ can still be CRDT-merged with the other side's old history on reconnect
 (this predates epochs). The epochs on the two servers then differ, so
 clients of either side refuse to merge their old replicas into it. That is
 the conservative outcome.
+
+Tombstones record the epoch they ended. On reconnect, home refuses to recreate a note it deleted in the same history and sends a delete back instead. A follower sends the deletes it made offline instead of recreating the notes.
 
 ## 13. Canvas notes and the note id rule
 

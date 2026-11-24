@@ -11,6 +11,8 @@ Five components live in this monorepo as git submodules: a Go server (Fiber + Po
 Specs and contracts (read before touching sync or books):
 - [`SPEC.md`](./SPEC.md): v2 vault model, data model, capabilities, API surface.
 - [`docs/CRDT-CLIENT-PROTOCOL.md`](./docs/CRDT-CLIENT-PROTOCOL.md): **normative** client protocol. It covers the join rules (never seed locally, join empty and wait for SyncStep2), ranged ops only, the 3-way `/diff` with `base_state`, WS tickets, offline replicas, `crdt_epoch` lineage (§12) and the conformance vectors. Its status table tracks what each server and client implements.
+- [`docs/SPEC-ESPELHO-SELADO.md`](./docs/SPEC-ESPELHO-SELADO.md): one-way mirrors (M0–M1 shipped) and sealed E2E books (design, owner decisions at the end).
+- [`docs/DESIGN-LANGUAGE.md`](./docs/DESIGN-LANGUAGE.md): visual and motion language (named springs, choreography, the event→motion porting table for web/Mac/TUI).
 - [`docs/SPEC-PARTE2.md`](./docs/SPEC-PARTE2.md): part 2 UX and format contract (floating explorer, note splits, hover preview, Kanban, JSON Canvas, `lumi://` + `lumi open`, admin user login).
 - [`docs/SPEC-LIVROS.md`](./docs/SPEC-LIVROS.md): the books model. It covers the account key `(server_url, username)`, the shared `~/.config/lumi/books.yaml` (byte-identical between Apple and TUI), the SSE feed `GET /api/events`, `GET /api/vaults/:id/changes?after=N` and the 7-state sync status. It ends with the owner's decisions.
 - `server/docs/ADMIN.md` (pt-BR): admin API and `lpa_` tokens.
@@ -37,6 +39,8 @@ make test-integration                       # testcontainers (two-server federat
 go run ./cmd/lumi-server migrate up|down N|status
 go run ./cmd/lumi-server token create <name> [--ttl 90d]   # admin lpa_ token (CLI only)
 go run ./cmd/lumi-server token revoke <id>
+go run ./cmd/lumi-server mirror list|status|resync|pause|resume <id>   # one-way mirrors (docs/SPEC-ESPELHO-SELADO.md)
+go run ./cmd/lumi-server mirror promote <vault> --confirm               # CLI only
 go run ./cmd/lumi-server admin grant|revoke|list <user>   # server_admin flag: panel username+password login (lps_ sessions, 12 h)
 ```
 
@@ -121,6 +125,7 @@ cd site && npm install && npm run dev
 - **WS Origin:** a present `Origin` must be on `LUMI_ALLOWED_ORIGINS`. An absent `Origin` (native clients) is admitted and gated by the ticket. Don't route Origin checks through the WS library: it rejects an absent Origin.
 
 ### Auth
+- **Shared login on a Mac:** the Lumi app and the TUI share `~/.config/lumi/accounts.yaml` v3, which holds no secrets. Each client keeps its own session: the app in the Keychain, the TUI in `tokens.yaml` (0600). They link through one-time PKCE device links (`POST /api/auth/device-links`, `/redeem`), and the app always asks before approving. `logout {"scope":"device"}` signs out the whole Mac (SPEC-LIVROS §8).
 - Sessions: `POST /api/auth/login` issues a session token. REST sends `X-Lumi-Token` (or Bearer). Sessions are stored hashed in Postgres, with bcrypt cost 12 and a 30-day TTL.
 - An account locks after 10 wrong passwords (`failed_logins`, `locked_until`). Admins can disable or unlock it.
 - First-boot bootstrap uses `LUMI_ADMIN_USERNAME` + `LUMI_ADMIN_PASSWORD` and only runs while the users table is empty. In production these are created for the first deploy and then deleted from the Gitea org secrets. After that, signup is by invite link.
@@ -136,11 +141,14 @@ cd site && npm install && npm run dev
 - `internal/crdt`: yrs cgo wrapper, doc registry, snapshot/update persistence, `crdt_epoch` stamping.
 - `internal/wsync`: Yjs WebSocket hub, tickets, awareness, debounced FS mirror.
 - `internal/feed`: SSE feed and `/changes`.
-- `internal/federation`: server↔server relay, manifests and announces (they carry the epoch).
+- `internal/federation`: server↔server relay.
+  - Manifests and announces carry the epoch, and frontmatter travels in `noteMeta2`.
+  - Home enforces a per-link capability ceiling on everything a follower sends.
+  - One-way mirrors: the mirror is read-only and home only sends.
 - `internal/fswatch`: fsnotify, diff-merges external edits into the CRDT.
 - `internal/admin`: admin API.
 - `internal/storage/{fs,pg}` and `internal/domain`.
-- `migrations/`: up to `0009_admin_login` (server_admin flag, admin sessions).
+- `migrations/`: up to `0011_device_links` (0009 admin login, 0010 mirror + tombstone epochs, 0011 device links for the shared Mac app/TUI login).
 - `third_party/y-crdt/`: submodule, yrs v0.26.0.
 
 ### Web client (`web-client/src`)
