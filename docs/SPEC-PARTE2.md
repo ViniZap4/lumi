@@ -8,10 +8,27 @@ Status: draft, 2026-11-24. Applies to web, Apple (macOS first) and TUI. The owne
 - **Motion:**
   - Transitions run 120–220 ms on GPU-friendly properties: view changes (explorer ↔ reader ↔ editor), opening and closing a split, the floating explorer scale/fade in, the hover preview fade, kanban card moves and canvas pan/zoom easing.
   - Reduce Motion is the system setting plus an app setting. When it is on, there are no transforms or fades, only instant state changes.
+- **"The app should feel alive"** (owner, 2026-11-24): spring-based motion (not linear), with these touches:
+  - shared-element transitions: an explorer row grows into the opened note, and a link morphs into its hover card;
+  - list items stagger in when the explorer opens;
+  - hover lift and press scale on interactive elements;
+  - a smooth cursor and caret, plus smooth scrolling;
+  - a sync dot that breathes while syncing and pulses on a remote change;
+  - a gentle flash on remotely edited ranges;
+  - skeleton shimmer while loading;
+  - panes and overlays that settle with a slight spring;
+  - the mode pill morphing between vim modes;
+  - toasts sliding and stacking.
+- **Limits:** keep it fast, never blocking input (keys typed during an animation apply immediately), and stay under 220 ms for anything on the typing path.
 
-## 2. Floating explorer (yazi-in-nvim)
+## 2. Floating explorer (yazi-in-nvim) — the only navigation
 
-- `-` (normal mode in the editor, and in the reader) or `<leader>e` opens the **floating explorer**. It is a centred overlay (about 80% × 80%) with yazi Miller columns and a preview, starting at the current note's folder. The full-screen explorer still exists for the book home.
+**Owner decision (2026-11-24): the floating explorer is the main and only navigation.** The full-screen explorer column layout and the books sidebar are removed from every client.
+- **Opening a book** shows its last opened note (per book, per device). With no last note, it shows a calm empty home (book name, recent notes, sync state), and the floating explorer opens automatically.
+- **Opening the explorer:** `-` (editor normal mode, reader, empty home), `<leader>e`, `:explore`, a visible explorer button in the top bar (mouse), and the palette.
+- **Books:** `gb` / palette "Switch book" opens the same floating overlay at the books level (accounts → books), so switching books is also floating. `[`/`]` still cycle books.
+- **Narrow screens** (phone, narrow window, small terminal): the overlay becomes a full-height sheet.
+- **Overlay:** a centred overlay (about 80% × 80%) with yazi Miller columns and a preview, starting at the current note's folder.
 - Keys inside it:
   - the usual explorer keymap (j/k/h/l, /, a, r, d, y/p, …);
   - `Enter` opens the note in the current pane;
