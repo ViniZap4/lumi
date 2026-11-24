@@ -76,6 +76,14 @@ Status: draft, 2026-11-24. Applies to web, Apple (macOS first) and TUI. The owne
 - External links show a URL card only, with no fetch.
 - Content always goes through the shared sanitizer.
 
+## 5b. Key rule: `-` always opens the explorer (owner, 2026-11-24)
+
+`-` opens the floating explorer everywhere, including a focused canvas or board in any mode. Canvas zoom moves off `-`:
+- zoom in: `+`, `=`, `zi`, ⌘/Ctrl-`+`;
+- zoom out: `_`, `zo`, ⌘/Ctrl-`-`;
+- fit: `0` or `zf`;
+- pinch and ⌘/Ctrl-wheel are unchanged.
+
 ## 5a. Modes for structured notes (owner, 2026-11-24)
 
 Kanban and canvas notes have three modes, like markdown notes: **Reading | Edit | Source**.
